@@ -1,0 +1,11 @@
+size 1200 1200
+
+sphere (0, 0, -3.0) 1 white
+
+plane (0, 0, 1.0) -6 white
+
+# light sources
+light (-2, 0, -3) blue
+light (0, -2, -3) red
+light (2, 0, -3) green
+light (0, 2, -3) yellow
