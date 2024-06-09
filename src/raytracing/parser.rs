@@ -70,6 +70,12 @@ impl fmt::Display for ParserError {
 
 type ParserResult<T> = Result<T, ParserError>;
 
+pub struct ImageData {
+    pub width: u32,
+    pub height: u32,
+    pub scene: Scene,
+}
+
 // TODO: report error
 
 impl SceneParser<'_> {
@@ -344,6 +350,33 @@ impl SceneParser<'_> {
         })
     }
     
+    fn parse_string(self: &mut Self) -> ParserResult<String> {
+        let mut next_token = self.pop();
+        // TODO: return parse error when the popped token don't end and starts with a quote
+        // remove quotes
+        next_token.drain(..1);
+        next_token.drain(next_token.len() - 1..);
+        Ok(next_token)
+    }
+
+    fn parse_model(self: &mut Self) -> ParserResult<SceneObject> {
+        self.match_token("model")?;
+        let path = self.parse_string()?;
+        let material = self.parse_material()?;
+        Solid::load_model(&path)
+            .map_err(|err| {
+                let message = format!("Cannot load model  \"{}\"", path);
+                println!("{}", err);
+                self.error::<Solid>(&message).expect_err("")
+            })
+            .map(|model| {
+                SceneObject {
+                    material,
+                    solid: model,
+                }
+            })
+    } 
+
     fn parse_light(self: &mut Self) -> ParserResult<Light> {
         self.match_token("light")?;
         let position = self.parse_vec3()?;
@@ -355,9 +388,9 @@ impl SceneParser<'_> {
         });
     }
 
-    pub fn parse_scene(self: &mut Self) -> ParserResult<Scene> {
+    pub fn parse_scene(self: &mut Self) -> ParserResult<ImageData> {
         // main routine that parse the whole file
-        let (_width, _height) = self.parse_header()?;
+        let (width, height) = self.parse_header()?;
 
         let mut objects = Vec::new();
         let mut lights = Vec::new();
@@ -376,15 +409,24 @@ impl SceneParser<'_> {
                     let object = self.parse_plane()?;
                     objects.push(object);
                 }
+                "model" => {
+                    let object = self.parse_model()?;
+                    objects.push(object);
+                }
                 _ => {
                     let message = format!("unexpected token '{}'", next_token);
                     return self.error(&message)
                 }
             }
         }
-        Ok(Scene {
+        let scene = Scene {
             objects,
             lights,
+        };
+        Ok(ImageData {
+            width: width as u32, 
+            height: height as u32, 
+            scene
         })
     }
 

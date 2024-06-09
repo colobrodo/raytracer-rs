@@ -58,7 +58,7 @@ fn cast(scene: &Scene, ray: &Ray) -> Vec3 {
                 result.normal
             };
     
-            // DEBUG:
+            // DEBUG: show the normal of the solid
             // return (normal + Vec3::one()) * 0.5;
             
             for light in &scene.lights {
@@ -94,7 +94,7 @@ fn cast(scene: &Scene, ray: &Ray) -> Vec3 {
                 MaterialType::Metal => 0.8,
                 MaterialType::Plastic => 0.1,
             };
-            // TODO: change bounce direction, as reflected or random direction based on the material type
+            // the bounce changes based on the material type
             let bounce_direction = get_bounce_direction(&current_ray, &material, normal);
             color += material.color * attenuation * (diffuse_color * diffuse_k);
             // update ray and specular component for the next iteration
@@ -110,12 +110,8 @@ fn cast(scene: &Scene, ray: &Ray) -> Vec3 {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let width = 640;
-    let height = 640;
-
     let args = Args::parse();
     
-
     // TODO: make the camera settable also from the file, with a custom orientation
     let cam_position = Vec3::zero();
 
@@ -126,7 +122,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         parser_error.print_error_location(&content);
         return Err(Box::from("parser error"));
     }
-    let scene = parser_result.unwrap();
+    let data = parser_result.unwrap();
+    // TODO: the image dimension is always hardcoded read it from the file
+    let width = data.width;
+    let height = data.height;
 
     let zoom = -1.0;
 
@@ -145,7 +144,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 origin: cam_position,
                 direction: Vec3::new(u, v, zoom) - cam_position,
             };
-            vpixel += cast(&scene, &ray) / (args.sample_rate as f64);
+            vpixel += cast(&data.scene, &ray) / (args.sample_rate as f64);
+        }
+        if (x + y) % 100 == 0 {
+            println!("completed {}/{}", y * width + x, width * height)
         }
         // TODO: clean up
         let p: Rgb<u8> = vpixel.into();

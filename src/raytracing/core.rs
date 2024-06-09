@@ -1,5 +1,9 @@
-use std::ops;
+use std::error::Error;
+use std::fs::File;
+use std::{io::BufReader, ops};
 use std::vec::Vec;
+
+use obj::{Obj, load_obj};
 
 use rand::{self, Rng};
 
@@ -35,6 +39,7 @@ pub struct SceneObject {
     pub material: Material,
 }
 
+#[derive(Clone, Copy)]
 pub struct HitResult {
     pub t: f64,
     pub normal: Vec3,
@@ -46,11 +51,203 @@ pub struct RaycastResult<'a> {
     pub normal: Vec3,
 }
 
+
+#[derive(Debug)]
+struct Box3 {
+    center: Vec3,
+    half_extension: Vec3,
+}
+
+impl Box3 {
+    pub fn min(self: &Self) -> Vec3 {
+        self.center - self.half_extension
+    }
+
+    pub fn max(self: &Self) -> Vec3 {
+        self.center + self.half_extension
+    }
+
+    fn collide(self: &Self, ray: &Ray) -> bool {
+        let mut dirfrac = Vec3::zero();
+        dirfrac.x = 1.0 / ray.direction.x;
+        dirfrac.y = 1.0 / ray.direction.y;
+        dirfrac.z = 1.0 / ray.direction.z;
+        // lb is the corner of AABB with minimal coordinates - left bottom, rt is maximal corner
+        // r.org is origin of ray
+        let t1 = (self.min().x - ray.origin.x) * dirfrac.x;
+        let t2 = (self.max().x - ray.origin.x) * dirfrac.x;
+        let t3 = (self.min().y - ray.origin.y) * dirfrac.y;
+        let t4 = (self.max().y - ray.origin.y) * dirfrac.y;
+        let t5 = (self.min().z - ray.origin.z) * dirfrac.z;
+        let t6 = (self.max().z - ray.origin.z) * dirfrac.z;
+    
+        let tmin = t1.min(t2).max(t3.min(t4)).max(t5.min(t6));
+        let tmax = t1.max(t2).min(t3.max(t4)).min(t5.max(t6));
+    
+        // if tmax < 0, ray (line) is intersecting AABB, but the whole AABB is behind us
+        if tmax < 0.0 {
+            return false;
+        }
+        // if tmin > tmax, ray doesn't intersect AABB
+        if tmin > tmax {
+            return false;
+        }
+        return true;
+    }
+}
+
+#[derive(Debug)]
+struct Mat4 {
+    value: [f64; 16],
+}
+
+impl Mat4 {
+    fn identity() -> Mat4 {
+        Mat4 {
+            value: [1.0, 0.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0, 0.0, 
+                    0.0, 0.0, 1.0, 0.0, 
+                    0.0, 0.0, 0.0, 1.0]
+        }
+    }
+    
+    fn scale(factor: f64) -> Mat4 {
+        Mat4 {
+            value: [factor, 0.0, 0.0, 0.0,
+                    0.0, factor, 0.0, 0.0, 
+                    0.0, 0.0, factor, 0.0, 
+                    0.0, 0.0, 0.0, factor]
+        }
+    }
+    
+    fn translate(offset: Vec3) -> Mat4 {
+        Mat4 {
+            value: [1.0, 0.0, 0.0, offset.x,
+                    0.0, 1.0, 0.0, offset.y, 
+                    0.0, 0.0, 1.0, offset.z, 
+                    0.0, 0.0, 0.0, 1.0]
+        }
+    }
+
+    fn then(&self, other: &Mat4) -> Mat4 {
+        // other * self 
+        let _a11 = other.value[0] * self.value[0] + other.value[1] * self.value[4] + other.value[2] * self.value[8] + other.value[3] * self.value[12];
+        let _a21 = other.value[4] * self.value[0] + other.value[5] * self.value[4] + other.value[6] * self.value[8] + other.value[7] * self.value[12];
+        let _a31 = other.value[8] * self.value[0] + other.value[9] * self.value[4] + other.value[10] * self.value[8] + other.value[11] * self.value[12];
+        let _a41 = other.value[12] * self.value[0] + other.value[13] * self.value[4] + other.value[14] * self.value[8] + other.value[15] * self.value[12];
+        
+        let _a12 = other.value[0] * self.value[1] + other.value[1] * self.value[5] + other.value[2] * self.value[9] + other.value[3] * self.value[13];
+        let _a22 = other.value[4] * self.value[1] + other.value[5] * self.value[5] + other.value[6] * self.value[9] + other.value[7] * self.value[13];
+        let _a32 = other.value[8] * self.value[1] + other.value[9] * self.value[5] + other.value[10] * self.value[9] + other.value[11] * self.value[13];
+        let _a42 = other.value[12] * self.value[1] + other.value[13] * self.value[5] + other.value[14] * self.value[9] + other.value[15] * self.value[13];
+        
+        let _a13 = other.value[0] * self.value[2] + other.value[1] * self.value[6] + other.value[2] * self.value[10] + other.value[3] * self.value[14];
+        let _a23 = other.value[4] * self.value[2] + other.value[5] * self.value[6] + other.value[6] * self.value[10] + other.value[7] * self.value[14];
+        let _a33 = other.value[8] * self.value[2] + other.value[9] * self.value[6] + other.value[10] * self.value[10] + other.value[11] * self.value[14];
+        let _a43 = other.value[12] * self.value[2] + other.value[13] * self.value[6] + other.value[14] * self.value[10] + other.value[15] * self.value[14];
+        
+        let _a14 = other.value[0] * self.value[3] + other.value[1] * self.value[7] + other.value[2] * self.value[11] + other.value[3] * self.value[15];
+        let _a24 = other.value[4] * self.value[3] + other.value[5] * self.value[7] + other.value[6] * self.value[11] + other.value[7] * self.value[15];
+        let _a34 = other.value[8] * self.value[3] + other.value[9] * self.value[7] + other.value[10] * self.value[11] + other.value[11] * self.value[15];
+        let _a44 = other.value[12] * self.value[3] + other.value[13] * self.value[7] + other.value[14] * self.value[11] + other.value[15] * self.value[15];
+
+        Mat4 {
+            value: [
+                _a11, _a12, _a13, _a14,
+                _a21, _a22, _a23, _a24,
+                _a31, _a32, _a33, _a34,
+                _a41, _a42, _a43, _a44,
+            ]
+        }
+    }
+
+    fn apply(&self, v: Vec3) -> Vec3 {
+        let x = self.value[0] * v.x + self.value[1] * v.y + self.value[2] * v.z + self.value[3];
+        let y = self.value[4] * v.x + self.value[5] * v.y + self.value[6] * v.z + self.value[7];
+        let z = self.value[8] * v.x + self.value[9] * v.y + self.value[10] * v.z + self.value[11];
+        let w = self.value[12] * v.x + self.value[13] * v.y + self.value[14] * v.z + self.value[15];
+        Vec3::new(x / w, y / w, z / w)
+    }
+
+}
+
+#[derive(Debug)]
+struct Model {
+    obj: Obj, 
+    trasform: Mat4, 
+    bounding_box: Box3
+}
+
 #[derive(Debug)]
 pub enum Solid {
     Sphere { center: Vec3, radius: f64 },
     Plane {normal: Vec3, distance: f64},
+    Model { model: Model }
 }
+
+impl Model {
+    fn iter_triangles(&self) -> impl Iterator<Item = (Vec3, Vec3, Vec3)> + '_ {
+        (0..self.obj.indices.len() / 3).map(|i| {
+            let v0: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 0] as usize].position.into();
+            let v0 = self.trasform.apply(v0);
+            let v1: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 1] as usize].position.into();
+            let v1 = self.trasform.apply(v1);
+            let v2: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 2] as usize].position.into();
+            let v2 = self.trasform.apply(v2);
+            (v0, v1, v2)
+        }).into_iter()
+    }
+}
+
+fn calculate_bounding_box(obj: &Obj, trasform: &Mat4) -> Box3 {
+    let mut max = Vec3::new(-f64::INFINITY, -f64::INFINITY, -f64::INFINITY);
+    let mut min = Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
+    for vertex in &obj.vertices {
+        let vertex: Vec3 = vertex.position.into();
+        let vertex = trasform.apply(vertex);
+        if max.x < vertex.x as f64 {
+            max.x = vertex.x as f64;
+        }
+        if max.y < vertex.y as f64 {
+            max.y = vertex.y as f64;
+        }
+        if max.z < vertex.z as f64 {
+            max.z = vertex.z as f64;
+        }
+
+        if min.x > vertex.x as f64 {
+            min.x = vertex.x as f64;
+        }
+        if min.y > vertex.y as f64 {
+            min.y = vertex.y as f64;
+        }
+        if min.z > vertex.z as f64 {
+            min.z = vertex.z as f64;
+        }
+    }
+    Box3 {
+        center: min + max * 0.5,
+        half_extension: (max - min) * 0.5,
+    }
+}
+
+impl Solid {
+    pub fn load_model(filename: &str) -> Result<Solid, Box<dyn Error>> {
+        let input = BufReader::new(File::open(filename)?);
+        let obj = load_obj(input)?;
+        let trasform = Mat4::scale(0.01).then(&Mat4::translate(Vec3::new(0.0, 0.0, -7.0)));
+        let bounding_box = calculate_bounding_box(&obj, &trasform); 
+        println!("loaded {}, with bounding box {:?}", filename, bounding_box);
+        Ok(Solid::Model {
+            model: Model {
+                obj,
+                trasform,
+                bounding_box,
+            }
+        })
+    }
+}
+
 
 pub fn hit<'a>(scene: &'a Scene, ray: &'a Ray) -> Option<RaycastResult<'a>> {
     let mut closest_t = f64::INFINITY;
@@ -70,11 +267,6 @@ pub fn hit<'a>(scene: &'a Scene, ray: &'a Ray) -> Option<RaycastResult<'a>> {
             }
         }
     }
-
-    // if closest_object.is_some() {
-    //     println!("ray {:?}  -> {:?}", ray.origin, ray.direction);
-    //     println!("closest t {:?}:  {:?}", closest_t, ray.at(closest_t));
-    // }
 
     closest_object.map(|object| RaycastResult {
         hitted_object: object, 
@@ -96,11 +288,6 @@ pub fn collide(solid: &Solid, ray: &Ray) -> Option<HitResult> {
                 return None
             }
 
-            // println!("ray.direction {:?}", ray.direction);
-            // println!("oc {:?}", oc);
-            // println!("a {}, b {}, c {}", a, b, c);
-            // println!("discriminant {}", discriminant);
-
             let t = (-b - discriminant.sqrt()) / (2.0 * a);
             let normal = (ray.at(t) - *center).normalize();
             return Some(HitResult {t, normal});
@@ -117,6 +304,48 @@ pub fn collide(solid: &Solid, ray: &Ray) -> Option<HitResult> {
                 return None;
             }
             Some(HitResult { t, normal: *normal })
+        }
+        Solid::Model { model } => {
+            if !model.bounding_box.collide(ray) {
+                return None;
+            }
+
+            let mut hit: Option<HitResult> = None;
+            for (v0, v1, v2) in model.iter_triangles() {
+                let v0v1 = v1 - v0;
+                let v0v2 = v2 - v0;
+                let pvec = ray.direction.cross(&v0v2);
+                let det = v0v1.dot(&pvec);
+                // ray and triangle are parallel if det is close to 0
+                if det.abs() < EPSILON {
+                    continue;
+                }
+                let inv_det = 1.0 / det;
+                let tvec = ray.direction - v0;
+                let u = tvec.dot(&pvec) * inv_det;
+                if u < 0.0 || u > 1.0 {
+                    continue;                    
+                }
+                let qvec = tvec.cross(&v0v1);
+                let v = ray.direction.dot(&qvec) * inv_det;
+                if v < 0.0 || u + v > 1.0 {
+                    continue;
+                }
+    
+                let t = v0v2.dot(&qvec) * inv_det;
+                if t < 0.0 {
+                    continue;
+                }
+    
+                // for first iteration
+                if hit.is_none() || t < hit.unwrap().t {
+                    hit = Some(HitResult {
+                        normal: v0v1.cross(&v0v2).normalize(),
+                        t: v0v2.dot(&qvec) * inv_det,
+                    });
+                }
+            }
+            hit
         }
     }
 }
@@ -140,6 +369,17 @@ pub struct Vec3 {
     pub z: f64,
 }
 
+impl From<[f64; 3]> for Vec3  {
+    fn from(value: [f64; 3]) -> Self {
+        Vec3::new(value[0], value[1], value[2])
+    }
+}
+
+impl From<[f32; 3]> for Vec3  {
+    fn from(value: [f32; 3]) -> Self {
+        Vec3::new(value[0] as f64, value[1] as f64, value[2] as f64)
+    }
+}
 
 impl ops::Add<Vec3> for Vec3 {
     type Output = Vec3;
@@ -211,6 +451,14 @@ impl Vec3 {
 
     pub fn dot(self: &Self, other: &Vec3) -> f64 {
         self.x * other.x + self.y * other.y + self.z * other.z
+    }
+
+    pub fn cross(self: &Self, other: &Vec3) -> Vec3 {
+        Vec3::new(
+            self.y * other.z - self.z * other.y,
+            self.z * other.x - self.x * other.z,
+            self.x * other.y - self.y * other.x
+        )
     }
 
     pub fn distance(self: &Self, other: Vec3) -> f64 {
