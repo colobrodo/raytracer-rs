@@ -226,7 +226,7 @@ fn calculate_bounding_box(obj: &Obj, trasform: &Mat4) -> Box3 {
         }
     }
     Box3 {
-        center: min + max * 0.5,
+        center: (min + max) * 0.5,
         half_extension: (max - min) * 0.5,
     }
 }
@@ -236,6 +236,7 @@ impl Solid {
         let input = BufReader::new(File::open(filename)?);
         let obj = load_obj(input)?;
         let bounding_box = calculate_bounding_box(&obj, &trasform); 
+        // DEBUG: remove
         println!("loaded {}, with bounding box {:?}", filename, bounding_box);
         Ok(Solid::Model {
             model: Model {
