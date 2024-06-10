@@ -162,7 +162,7 @@ impl SceneParser<'_> {
 
         match current_char {
             // if char is a symbol return it
-            ',' | '(' | ')' | ':'  => {
+            ',' | '(' | ')' | ':' | '>'  => {
                 self.advance();
                 result.push(current_char);
             }
@@ -365,10 +365,12 @@ impl SceneParser<'_> {
             let next_token = self.peek();
             let next_trasform = match next_token.as_str() {
                 "scale" => {
+                    self.pop();  // discarding "scale"
                     let factor = self.parse_float()?;
                     Mat4::scale(factor)
-                },
-                "translate" => {
+                    },
+                    "translate" => {
+                    self.pop();  // discarding "translate"
                     let offset = self.parse_vec3()?;
                     Mat4::translate(offset)
                 },
@@ -378,7 +380,6 @@ impl SceneParser<'_> {
             trasform = trasform.then(&next_trasform);
         }
         Ok(trasform)
-        Ok(Mat4::scale(0.01).then(&Mat4::translate(Vec3::new(0.0, 0.0, -7.0))))
     }
 
     fn parse_model(self: &mut Self) -> ParserResult<SceneObject> {
