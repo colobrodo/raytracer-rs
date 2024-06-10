@@ -1,4 +1,5 @@
 use std::fs;
+use std::time::Instant;
 use std::{cmp::min, error::Error};
 
 use image::{ImageBuffer, Rgb};
@@ -122,12 +123,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         parser_error.print_error_location(&content);
         return Err(Box::from("parser error"));
     }
+
     let data = parser_result.unwrap();
-    // TODO: the image dimension is always hardcoded read it from the file
+
     let width = data.width;
     let height = data.height;
 
     let zoom = -1.0;
+
+    let start = Instant::now();
 
     let mut buffer = ImageBuffer::new(width, height);
 
@@ -146,14 +150,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
             vpixel += cast(&data.scene, &ray) / (args.sample_rate as f64);
         }
-        if (x + y) % 100 == 0 {
-            println!("completed {}/{}", y * width + x, width * height)
+        if (y * width + x) % 200 == 0 {
+            print!("completed {}/{}\r", y * width + x, width * height)
         }
         // TODO: clean up
         let p: Rgb<u8> = vpixel.into();
         *pixel = p;
     }
 
-    buffer.save(args.output).unwrap();
+    let total_time = start.elapsed();
+    println!("Rendered {} in {:?}", args.output, total_time);
+
+    buffer.save(&args.output).unwrap();
     Ok(())
 }
