@@ -10,3 +10,4 @@ clap = { version = "4.5.4", features = ["derive"] }
 image = "0.25.1"
 obj-rs = "0.7"
 rand = "0.8.5"
+rayon = "1.10.0"

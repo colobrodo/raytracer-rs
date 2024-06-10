@@ -123,12 +123,26 @@ impl Mat4 {
     pub fn translate(offset: Vec3) -> Mat4 {
         Mat4 {
             value: [1.0, 0.0, 0.0, offset.x,
-                    0.0, 1.0, 0.0, offset.y, 
-                    0.0, 0.0, 1.0, offset.z, 
-                    0.0, 0.0, 0.0, 1.0]
+            0.0, 1.0, 0.0, offset.y, 
+            0.0, 0.0, 1.0, offset.z, 
+            0.0, 0.0, 0.0, 1.0]
         }
     }
-
+            
+    pub fn rotate(axis: Vec3, angle: f64) -> Mat4 {
+        // https://en.wikipedia.org/wiki/Rotation_matrix#Rotation_matrix_from_axis_and_angle
+        let u = axis.normalize();
+        let cos_t = angle.cos();
+        let sin_t = angle.sin();
+        Mat4 {
+            value: [cos_t + (u.x * u.x) * (1.0 - cos_t), u.x * u.y * (1.0 - cos_t) - u.z * sin_t, u.x * u.z * (1.0 - cos_t) - u.y * sin_t, 0.0,
+                    u.x * u.y * (1.0 - cos_t) - u.x * sin_t, cos_t + (u.y * u.y) * (1.0 - cos_t), u.z * u.y * (1.0 - cos_t) - u.x * sin_t, 0.0, 
+                    u.x * u.z * (1.0 - cos_t) - u.y * sin_t, u.z * u.y * (1.0 - cos_t) + u.x * sin_t, cos_t + u.z * u.z * (1.0 - cos_t), 0.0,
+                    0.0, 0.0, 0.0, 1.0]
+            }
+        
+        }
+        
     pub fn then(&self, other: &Mat4) -> Mat4 {
         // other * self 
         let _a11 = other.value[0] * self.value[0] + other.value[1] * self.value[4] + other.value[2] * self.value[8] + other.value[3] * self.value[12];
@@ -431,6 +445,18 @@ impl Vec3 {
     
     pub fn one() -> Vec3 {
         Vec3 {x: 1.0, y: 1.0, z: 1.0}
+    }
+
+    pub fn x_axis() -> Vec3 {
+        Vec3 {x: 1.0, y: 0.0, z: 0.0}
+    }
+
+    pub fn y_axis() -> Vec3 {
+        Vec3 {x: 0.0, y: 1.0, z: 0.0}
+    }
+
+    pub fn z_axis() -> Vec3 {
+        Vec3 {x: 0.0, y: 0.0, z: 1.0}
     }
     
     pub fn random() -> Vec3 {

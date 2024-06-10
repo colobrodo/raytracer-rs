@@ -5,6 +5,8 @@ use std::{cmp::min, error::Error};
 use image::{ImageBuffer, Rgb};
 use rand::{self, Rng};
 
+use rayon::prelude::*;
+
 use clap::Parser;
 
 mod raytracing;
@@ -130,31 +132,42 @@ fn main() -> Result<(), Box<dyn Error>> {
     let height = data.height;
 
     let zoom = -1.0;
-
+        
+    let total_stripes = 32;
+    let mut pixels = vec![Vec3::zero(); (width * height) as usize];
+    let stripe_size = (height / total_stripes * width) as usize;
+    let stripes: Vec<(usize, &mut [Vec3])> = pixels.chunks_mut(stripe_size)
+        .enumerate()
+        .collect();
+    // measure time
     let start = Instant::now();
+    // render the image inside the vec
+    stripes.into_par_iter().for_each(|(stripe_index, stripe)| {
+        for (i, vpixel) in stripe.into_iter().enumerate() {
+            for _ in 0..args.sample_rate {
+                let x = i % width as usize;
+                let y = (stripe_size * stripe_index + i) / width as usize;
+                let x_offset = rand::thread_rng().gen_range(-0.5..0.5);
+                let y_offset = rand::thread_rng().gen_range(-0.5..0.5);
+                // getting pixel ray coordinate
+                let u = (x as f64 + x_offset - (width as f64) * 0.5) / (width as f64);
+                let v = (y as f64 + y_offset - (height as f64) * 0.5) / (height as f64);
+    
+                let ray = Ray {
+                    origin: cam_position,
+                    direction: Vec3::new(u, v, zoom) - cam_position,
+                };
+                *vpixel += cast(&data.scene, &ray) / (args.sample_rate as f64);
+            }
+        }
+    });
 
     let mut buffer = ImageBuffer::new(width, height);
 
+    // write the raytracing result into the ImageBuffer
     for (x, y, pixel) in buffer.enumerate_pixels_mut() {
-        let mut vpixel = Vec3::zero();
-        for _ in 0..args.sample_rate {
-            let x_offset = rand::thread_rng().gen_range(-0.5..0.5);
-            let y_offset = rand::thread_rng().gen_range(-0.5..0.5);
-            // getting pixel ray coordinate
-            let u = (x as f64 + x_offset - (width as f64) * 0.5) / (width as f64);
-            let v = (y as f64 + y_offset - (height as f64) * 0.5) / (height as f64);
-
-            let ray = Ray {
-                origin: cam_position,
-                direction: Vec3::new(u, v, zoom) - cam_position,
-            };
-            vpixel += cast(&data.scene, &ray) / (args.sample_rate as f64);
-        }
-        if (y * width + x) % 200 == 0 {
-            print!("completed {}/{}\r", y * width + x, width * height)
-        }
-        // TODO: clean up
-        let p: Rgb<u8> = vpixel.into();
+        let idx = (x + width * y) as usize;
+        let p: Rgb<u8> = pixels[idx].into();
         *pixel = p;
     }
 
