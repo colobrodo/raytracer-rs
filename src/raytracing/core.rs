@@ -97,12 +97,12 @@ impl Box3 {
 }
 
 #[derive(Debug)]
-struct Mat4 {
+pub struct Mat4 {
     value: [f64; 16],
 }
 
 impl Mat4 {
-    fn identity() -> Mat4 {
+    pub fn identity() -> Mat4 {
         Mat4 {
             value: [1.0, 0.0, 0.0, 0.0,
                     0.0, 1.0, 0.0, 0.0, 
@@ -111,7 +111,7 @@ impl Mat4 {
         }
     }
     
-    fn scale(factor: f64) -> Mat4 {
+    pub fn scale(factor: f64) -> Mat4 {
         Mat4 {
             value: [factor, 0.0, 0.0, 0.0,
                     0.0, factor, 0.0, 0.0, 
@@ -120,7 +120,7 @@ impl Mat4 {
         }
     }
     
-    fn translate(offset: Vec3) -> Mat4 {
+    pub fn translate(offset: Vec3) -> Mat4 {
         Mat4 {
             value: [1.0, 0.0, 0.0, offset.x,
                     0.0, 1.0, 0.0, offset.y, 
@@ -129,7 +129,7 @@ impl Mat4 {
         }
     }
 
-    fn then(&self, other: &Mat4) -> Mat4 {
+    pub fn then(&self, other: &Mat4) -> Mat4 {
         // other * self 
         let _a11 = other.value[0] * self.value[0] + other.value[1] * self.value[4] + other.value[2] * self.value[8] + other.value[3] * self.value[12];
         let _a21 = other.value[4] * self.value[0] + other.value[5] * self.value[4] + other.value[6] * self.value[8] + other.value[7] * self.value[12];
@@ -232,10 +232,9 @@ fn calculate_bounding_box(obj: &Obj, trasform: &Mat4) -> Box3 {
 }
 
 impl Solid {
-    pub fn load_model(filename: &str) -> Result<Solid, Box<dyn Error>> {
+    pub fn load_model(filename: &str, trasform: Mat4) -> Result<Solid, Box<dyn Error>> {
         let input = BufReader::new(File::open(filename)?);
         let obj = load_obj(input)?;
-        let trasform = Mat4::scale(0.01).then(&Mat4::translate(Vec3::new(0.0, 0.0, -7.0)));
         let bounding_box = calculate_bounding_box(&obj, &trasform); 
         println!("loaded {}, with bounding box {:?}", filename, bounding_box);
         Ok(Solid::Model {

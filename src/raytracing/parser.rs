@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::core::{Light, Material, MaterialType, Scene, SceneObject, Solid, Vec3};
+use super::core::{Light, Mat4, Material, MaterialType, Scene, SceneObject, Solid, Vec3};
 
 
 pub struct SceneParser<'a> {
@@ -359,11 +359,34 @@ impl SceneParser<'_> {
         Ok(next_token)
     }
 
+    fn parse_trasformation(self: &mut Self) -> ParserResult<Mat4> {
+        let mut trasform = Mat4::identity();
+        while self.maybe_match(">") {
+            let next_token = self.peek();
+            let next_trasform = match next_token.as_str() {
+                "scale" => {
+                    let factor = self.parse_float()?;
+                    Mat4::scale(factor)
+                },
+                "translate" => {
+                    let offset = self.parse_vec3()?;
+                    Mat4::translate(offset)
+                },
+                _ => return self.error("unexpected token while parsing trasform")
+
+            };
+            trasform = trasform.then(&next_trasform);
+        }
+        Ok(trasform)
+        Ok(Mat4::scale(0.01).then(&Mat4::translate(Vec3::new(0.0, 0.0, -7.0))))
+    }
+
     fn parse_model(self: &mut Self) -> ParserResult<SceneObject> {
         self.match_token("model")?;
         let path = self.parse_string()?;
         let material = self.parse_material()?;
-        Solid::load_model(&path)
+        let trasform = self.parse_trasformation()?;
+        Solid::load_model(&path, trasform)
             .map_err(|err| {
                 let message = format!("Cannot load model  \"{}\"", path);
                 println!("{}", err);
