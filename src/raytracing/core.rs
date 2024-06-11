@@ -139,9 +139,8 @@ impl Mat4 {
                     u.x * u.y * (1.0 - cos_t) - u.x * sin_t, cos_t + (u.y * u.y) * (1.0 - cos_t), u.z * u.y * (1.0 - cos_t) - u.x * sin_t, 0.0, 
                     u.x * u.z * (1.0 - cos_t) - u.y * sin_t, u.z * u.y * (1.0 - cos_t) + u.x * sin_t, cos_t + u.z * u.z * (1.0 - cos_t), 0.0,
                     0.0, 0.0, 0.0, 1.0]
-            }
-        
-        }
+        }    
+    }
         
     pub fn then(&self, other: &Mat4) -> Mat4 {
         // other * self 
