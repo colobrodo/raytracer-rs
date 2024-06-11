@@ -368,11 +368,17 @@ impl SceneParser<'_> {
                     self.pop();  // discarding "scale"
                     let factor = self.parse_float()?;
                     Mat4::scale(factor)
-                    },
-                    "translate" => {
+                },
+                "translate" => {
                     self.pop();  // discarding "translate"
                     let offset = self.parse_vec3()?;
                     Mat4::translate(offset)
+                },
+                "rotate" => {
+                    self.pop();  // discarding "rotate"
+                    let axis = self.parse_vec3()?;
+                    let angle = self.parse_float()?;
+                    Mat4::rotate(axis, angle)
                 },
                 _ => return self.error("unexpected token while parsing trasform")
 
