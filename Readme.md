@@ -11,6 +11,7 @@ I also handled simple multithreading (with `rayon`) and model trasformations (th
   - [Getting started](#getting-started)
   - [Arguments](#arguments)
   - [Examples](#examples)
+  - [Future](#future)
 
 ## Getting started
 
@@ -23,7 +24,7 @@ Then run the Typescript compiler:
 
     cargo run
 
-:tada:
+Voilà :tada:
 
 ## Arguments
 
@@ -70,3 +71,8 @@ Here some of the generated images
 ### Multiple Sphere
 
 ![Multiple Spheres](./img/multisphere.bmp)
+
+## Future
+
+- I plan to use octree or grids to optimize the (now very slow) mesh rendering
+- If I reach reasonable time with Octree/Grid optimization, try render a video rendering each frame and then using ffmpeg  
