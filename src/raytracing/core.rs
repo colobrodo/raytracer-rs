@@ -1,8 +1,10 @@
+use std::{cell, default};
 use std::error::Error;
 use std::fs::File;
 use std::{io::BufReader, ops};
 use std::vec::Vec;
 
+use image::imageops::FilterType::Triangle;
 use obj::{Obj, load_obj};
 
 use rand::{self, Rng};
@@ -52,13 +54,60 @@ pub struct RaycastResult<'a> {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct Box3 {
     center: Vec3,
     half_extension: Vec3,
 }
 
 impl Box3 {
+    pub fn from_min_max(min: Vec3, max: Vec3) -> Box3 {
+        Box3 {
+            center: (min + max) * 0.5,
+            half_extension: (max - min) * 0.5,
+        }
+    }
+
+    pub fn iter_corners(&self) -> impl Iterator<Item = Vec3> {
+        [
+            Vec3::zero(),
+            Vec3::x_axis(),
+            Vec3::y_axis(),
+            Vec3::y_axis() + Vec3::x_axis(),
+            Vec3::z_axis(),
+            Vec3::z_axis() + Vec3::x_axis(),
+            Vec3::z_axis() + Vec3::y_axis(),
+            Vec3::one(),
+        ]
+        .map(|offset| {
+            self.min() + offset * self.half_extension * 2.0
+        })
+        .into_iter()
+    }
+
+    pub fn include(&mut self, point: Vec3) {
+        let dist = point - self.center;
+        if dist.x.abs() > self.half_extension.x {
+            self.half_extension.x = (dist.x.abs() + self.half_extension.x) / 2.0;
+            self.center.x += (dist.x - self.half_extension.x * dist.x.signum()) / 2.0;
+        }
+        if dist.y.abs() > self.half_extension.y {
+            self.half_extension.y = (dist.y.abs() + self.half_extension.y) / 2.0;
+            self.center.y += (dist.y - self.half_extension.y * dist.y.signum()) / 2.0;
+        }
+        if dist.z.abs() > self.half_extension.z {
+            self.half_extension.z = (dist.z.abs() + self.half_extension.z) / 2.0;
+            self.center.z += (dist.z - self.half_extension.z * dist.z.signum()) / 2.0;
+        }
+    }
+
+    pub fn contains(&mut self, point: Vec3) -> bool {
+        let dist = point - self.center;
+        return dist.x.abs() <= self.half_extension.x 
+            && dist.y.abs() <= self.half_extension.y
+            && dist.z.abs() <= self.half_extension.z;
+    }
+
     pub fn min(self: &Self) -> Vec3 {
         self.center - self.half_extension
     }
@@ -192,22 +241,182 @@ struct Model {
 }
 
 #[derive(Debug)]
+struct ModelGrid {
+    bounding_box: Box3,
+    cells_per_side: u32,
+    offset_array: Vec<usize>,
+    triangle_indices: Vec<usize>,
+}
+
+fn triangle_ray_intersection(triangle: (Vec3, Vec3, Vec3), ray: &Ray) -> Option<HitResult> {
+    let (v0, v1, v2) = triangle;
+    let v0v1 = v1 - v0;
+    let v0v2 = v2 - v0;
+    let pvec = ray.direction.cross(&v0v2);
+    let det = v0v1.dot(&pvec);
+    // ray and triangle are parallel if det is close to 0
+    if det.abs() < EPSILON {
+        return None;
+    }
+    let inv_det = 1.0 / det;
+    let tvec = ray.direction - v0;
+    let u = tvec.dot(&pvec) * inv_det;
+    if u < 0.0 || u > 1.0 {
+        return None;
+    }
+    let qvec = tvec.cross(&v0v1);
+    let v = ray.direction.dot(&qvec) * inv_det;
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+
+    let t = v0v2.dot(&qvec) * inv_det;
+    if t < 0.0 {
+        return None;
+    }
+
+    Some(HitResult {
+        normal: v0v1.cross(&v0v2).normalize(),
+        t: v0v2.dot(&qvec) * inv_det,
+    })
+}
+
+fn ray_intersect(model: &Model, grid: &ModelGrid, ray: &Ray) -> Option<HitResult> {
+    let mut closest_hit: Option<HitResult> = None;
+    for ((ix, iy, iz), bbox) in grid.enum_boxes() {
+        if !bbox.collide(ray) {
+            continue;
+        }
+
+        for triangle_i in grid.triangles(ix, iy, iz) {
+            let triangle = model.get_triangle(*triangle_i);
+            if let Some(hit) = triangle_ray_intersection(triangle, ray) {
+                if closest_hit.is_none() || hit.t < closest_hit.unwrap().t {
+                    closest_hit = Some(hit);
+                }
+            }
+        }
+    
+    }
+    closest_hit
+}
+
+impl ModelGrid {
+    fn new(model: &Model, cells_per_side: usize) -> ModelGrid {
+        // foreach box create a vec
+        let mut cells_triangles: Vec<Vec<usize>> = vec![Vec::new(); cells_per_side * cells_per_side * cells_per_side];
+        let cell_size = (model.bounding_box.max() - model.bounding_box.min()) / cells_per_side as f64;
+        for (i, (v0, v1, v2)) in model.iter_triangles().enumerate() {
+            // triangle bounding box
+            let mut bbox = Box3 {
+                center: v0,
+                half_extension: Vec3::zero(),
+            };
+            bbox.include(v1);
+            bbox.include(v2);
+            // check each corner of the bounding box which cell intersect
+            for corner in bbox.iter_corners() {
+                let relative_point = (corner - model.bounding_box.min()) / cell_size;
+                // (ix, iy, iz) coordinates
+                // HACK: min to avoid patch division error that leads to out of bound exceptions
+                let ix = (relative_point.x as usize).min(cells_per_side - 1);
+                let iy = (relative_point.y as usize).min(cells_per_side - 1);
+                let iz = (relative_point.z as usize).min(cells_per_side - 1);
+                // get the flatten index in the buffer
+                let buffer_index = iz * cells_per_side * cells_per_side + iy * cells_per_side + ix;
+                // adds to that vec the triangle index i
+                if let Some(index) = cells_triangles[buffer_index].last() {
+                    if *index == i {
+                        continue;
+                    }
+                }
+                cells_triangles[buffer_index].push(i);
+            }
+            
+        }
+        // create a single offset array with the dimension of the respective vector
+        let mut offsets = vec![0; cells_per_side * cells_per_side * cells_per_side];
+        let mut triangle_indices = Vec::new();
+        let mut offset = 0;
+        for (i, triangles) in cells_triangles.into_iter().enumerate() {
+            offset += triangles.len();
+            offsets[i] = offset;
+            // add all the triangles id in the triangles indices array
+            triangle_indices.extend(triangles);
+        }
+
+        ModelGrid { 
+            bounding_box: model.bounding_box,
+            cells_per_side: cells_per_side as u32, 
+            offset_array: offsets, 
+            triangle_indices,
+        }
+    }
+    
+    fn triangles(&self, ix: u32, iy: u32, iz: u32) -> impl Iterator<Item = &usize> {
+        let index = (iz * self.cells_per_side * self.cells_per_side + iy * self.cells_per_side + ix) as usize;
+        let start = if index > 0 {
+            self.offset_array[index - 1]
+        } else {
+            0
+        };
+        let end = self.offset_array[index];
+        self.triangle_indices[start..end].into_iter()
+    }
+
+    fn cell_box(&self, ix: u32, iy: u32, iz: u32) -> Box3 {
+        let half_cell_size = self.bounding_box.half_extension / self.cells_per_side as f64;
+        Box3 {
+            half_extension: half_cell_size,
+            center: self.bounding_box.min() + half_cell_size * 2.0 * Vec3::new(ix as f64 + 0.5, iy as f64 + 0.5, iz as f64 + 0.5),
+        }
+    }
+
+    fn boxes_indices(&self) -> impl Iterator<Item = (u32, u32, u32)> + '_ {
+        (0..self.cells_per_side).flat_map(|i| {
+            (0..self.cells_per_side).map(move |j| (i, j))
+        })
+        .flat_map(|(i, j)| {
+            (0..self.cells_per_side).map(move |k| (i, j, k))
+
+        })
+        .into_iter()
+    }
+    
+    fn iter_boxes(&self) -> impl Iterator<Item = Box3> + '_ {
+        self.boxes_indices()
+            .map(|(ix, iy, iz)| self.cell_box(ix, iy, iz))
+            .into_iter()
+    }
+    
+    fn enum_boxes(&self) -> impl Iterator<Item = ((u32, u32, u32), Box3)> + '_ {
+        self.boxes_indices()
+            .map(|(ix, iy, iz)| ((ix, iy, iz), self.cell_box(ix, iy, iz)))
+            .into_iter()
+    }
+}
+
+#[derive(Debug)]
 pub enum Solid {
     Sphere { center: Vec3, radius: f64 },
-    Plane {normal: Vec3, distance: f64},
-    Model { model: Model }
+    Plane { normal: Vec3, distance: f64},
+    Model { model: Model, grid: ModelGrid }
 }
 
 impl Model {
+    fn get_triangle(&self, i: usize) -> (Vec3, Vec3, Vec3) {
+        let v0: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 0] as usize].position.into();
+        let v0 = self.trasform.apply(v0);
+        let v1: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 1] as usize].position.into();
+        let v1 = self.trasform.apply(v1);
+        let v2: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 2] as usize].position.into();
+        let v2 = self.trasform.apply(v2);
+        (v0, v1, v2)
+    }
+
     fn iter_triangles(&self) -> impl Iterator<Item = (Vec3, Vec3, Vec3)> + '_ {
         (0..self.obj.indices.len() / 3).map(|i| {
-            let v0: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 0] as usize].position.into();
-            let v0 = self.trasform.apply(v0);
-            let v1: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 1] as usize].position.into();
-            let v1 = self.trasform.apply(v1);
-            let v2: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 2] as usize].position.into();
-            let v2 = self.trasform.apply(v2);
-            (v0, v1, v2)
+            self.get_triangle(i)
         }).into_iter()
     }
 }
@@ -238,10 +447,8 @@ fn calculate_bounding_box(obj: &Obj, trasform: &Mat4) -> Box3 {
             min.z = vertex.z as f64;
         }
     }
-    Box3 {
-        center: (min + max) * 0.5,
-        half_extension: (max - min) * 0.5,
-    }
+    Box3::from_min_max(min, max)
+
 }
 
 impl Solid {
@@ -251,12 +458,16 @@ impl Solid {
         let bounding_box = calculate_bounding_box(&obj, &trasform); 
         // DEBUG: remove
         println!("loaded {}, with bounding box {:?}", filename, bounding_box);
+        let model = Model {
+            obj,
+            trasform,
+            bounding_box,
+        };
+        let grid = ModelGrid::new(&model, 4);
+        println!("Created grid with this offsets: {:?}", grid.offset_array);
         Ok(Solid::Model {
-            model: Model {
-                obj,
-                trasform,
-                bounding_box,
-            }
+            grid,
+            model,
         })
     }
 }
@@ -318,47 +529,11 @@ pub fn collide(solid: &Solid, ray: &Ray) -> Option<HitResult> {
             }
             Some(HitResult { t, normal: *normal })
         }
-        Solid::Model { model } => {
+        Solid::Model { model, grid } => {
             if !model.bounding_box.collide(ray) {
                 return None;
             }
-
-            let mut hit: Option<HitResult> = None;
-            for (v0, v1, v2) in model.iter_triangles() {
-                let v0v1 = v1 - v0;
-                let v0v2 = v2 - v0;
-                let pvec = ray.direction.cross(&v0v2);
-                let det = v0v1.dot(&pvec);
-                // ray and triangle are parallel if det is close to 0
-                if det.abs() < EPSILON {
-                    continue;
-                }
-                let inv_det = 1.0 / det;
-                let tvec = ray.direction - v0;
-                let u = tvec.dot(&pvec) * inv_det;
-                if u < 0.0 || u > 1.0 {
-                    continue;                    
-                }
-                let qvec = tvec.cross(&v0v1);
-                let v = ray.direction.dot(&qvec) * inv_det;
-                if v < 0.0 || u + v > 1.0 {
-                    continue;
-                }
-    
-                let t = v0v2.dot(&qvec) * inv_det;
-                if t < 0.0 {
-                    continue;
-                }
-    
-                // for first iteration
-                if hit.is_none() || t < hit.unwrap().t {
-                    hit = Some(HitResult {
-                        normal: v0v1.cross(&v0v2).normalize(),
-                        t: v0v2.dot(&qvec) * inv_det,
-                    });
-                }
-            }
-            hit
+            ray_intersect(model, grid, ray)
         }
     }
 }
@@ -434,6 +609,13 @@ impl ops::Div<f64> for Vec3 {
     type Output = Vec3;
     fn div(self, rhs: f64) -> Self::Output {
         Vec3 {x: self.x / rhs, y: self.y / rhs, z: self.z / rhs}
+    }
+}
+
+impl ops::Div<Vec3> for Vec3 {
+    type Output = Vec3;
+    fn div(self, rhs: Vec3) -> Self::Output {
+        Vec3 {x: self.x / rhs.x, y: self.y / rhs.y, z: self.z / rhs.z}
     }
 }
 

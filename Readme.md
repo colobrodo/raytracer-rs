@@ -20,7 +20,7 @@ In order to run the game, first clone the repository and enter the folder:
     git clone https://github.com/colobrodo/raytracer-rs.git
     cd raytracer
 
-Then run the Typescript compiler:
+Then run the Rust compiler:
 
     cargo run
 
