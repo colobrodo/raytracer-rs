@@ -1,7 +1,7 @@
 size 1200 1200
 
-model "./models/bunny_lp.obj" white > scale 0.4 > translate (0, 0, -7)
+model "./models/bunny_lp.obj" white > scale 0.4 > translate (0, 0, 7)
 
 # light sources
-light (0, 1, -2) blue
-light (0, 0, -1) green
+light (0, 1, 2) red
+light (0, 0, 1) green
