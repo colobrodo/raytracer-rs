@@ -456,15 +456,15 @@ impl Solid {
         let input = BufReader::new(File::open(filename)?);
         let obj = load_obj(input)?;
         let bounding_box = calculate_bounding_box(&obj, &trasform); 
-        // DEBUG: remove
-        println!("loaded {}, with bounding box {:?}", filename, bounding_box);
+        // DEBUG: remove commented println!
+        // println!("loaded {}, with bounding box {:?}", filename, bounding_box);
         let model = Model {
             obj,
             trasform,
             bounding_box,
         };
         let grid = ModelGrid::new(&model, 4);
-        println!("Created grid with this offsets: {:?}", grid.offset_array);
+        // println!("Created grid with this offsets: {:?}", grid.offset_array);
         Ok(Solid::Model {
             grid,
             model,

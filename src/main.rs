@@ -131,7 +131,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let width = data.width;
     let height = data.height;
 
-    let zoom = -1.0;
+    let zoom = 1.0;
         
     let total_stripes = 32;
     let mut pixels = vec![Vec3::zero(); (width * height) as usize];
