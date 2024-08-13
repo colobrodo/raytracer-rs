@@ -40,7 +40,7 @@ impl FilePosition {
 #[derive(Debug)]
 pub struct ParserError {
     position: FilePosition,
-    message: String,
+    pub message: String,
 }
 
 impl ParserError {
