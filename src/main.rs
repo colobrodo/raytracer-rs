@@ -1,3 +1,4 @@
+use std::fmt::format;
 use std::fs;
 use std::time::Instant;
 use std::{cmp::min, error::Error};
@@ -123,7 +124,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let parser_result = parser.parse_scene();
     if let Err(parser_error) = parser_result {
         parser_error.print_error_location(&content);
-        return Err(Box::from("parser error"));
+        println!("{}", parser_error.message);
+        return Err(Box::from(format!("parser error {}", parser_error.message)));
     }
 
     let data = parser_result.unwrap();
