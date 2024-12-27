@@ -67,21 +67,6 @@ impl Box3 {
         }
     }
 
-    pub fn iter_corners(&self) -> impl Iterator<Item = Vec3> {
-        [
-            Vec3::zero(),
-            Vec3::x_axis(),
-            Vec3::y_axis(),
-            Vec3::y_axis() + Vec3::x_axis(),
-            Vec3::z_axis(),
-            Vec3::z_axis() + Vec3::x_axis(),
-            Vec3::z_axis() + Vec3::y_axis(),
-            Vec3::one(),
-        ]
-        .map(|offset| self.min() + offset * self.half_extension * 2.0)
-        .into_iter()
-    }
-
     pub fn include(&mut self, point: Vec3) {
         let dist = point - self.center;
         if dist.x.abs() > self.half_extension.x {
@@ -307,32 +292,32 @@ fn triangle_ray_intersection(triangle: (Vec3, Vec3, Vec3), ray: &Ray) -> Option<
     let (v0, v1, v2) = triangle;
     let v0v1 = v1 - v0;
     let v0v2 = v2 - v0;
-    let pvec = ray.direction.cross(&v0v2);
-    let det = v0v1.dot(&pvec);
+    let pvec = ray.direction.cross(v0v2);
+    let det = v0v1.dot(pvec);
     // ray and triangle are parallel if det is close to 0
     if det.abs() < EPSILON {
         return None;
     }
     let inv_det = 1.0 / det;
     let tvec = ray.direction - v0;
-    let u = tvec.dot(&pvec) * inv_det;
+    let u = tvec.dot(pvec) * inv_det;
     if u < 0.0 || u > 1.0 {
         return None;
     }
-    let qvec = tvec.cross(&v0v1);
-    let v = ray.direction.dot(&qvec) * inv_det;
+    let qvec = tvec.cross(v0v1);
+    let v = ray.direction.dot(qvec) * inv_det;
     if v < 0.0 || u + v > 1.0 {
         return None;
     }
 
-    let t = v0v2.dot(&qvec) * inv_det;
+    let t = v0v2.dot(qvec) * inv_det;
     if t < 0.0 {
         return None;
     }
 
     Some(HitResult {
-        normal: v0v1.cross(&v0v2).normalize(),
-        t: v0v2.dot(&qvec) * inv_det,
+        normal: v0v1.cross(v0v2).normalize(),
+        t,
     })
 }
 
@@ -561,9 +546,9 @@ pub fn collide(solid: &Solid, ray: &Ray) -> Option<HitResult> {
     match solid {
         Solid::Sphere { center, radius } => {
             let oc = ray.origin - *center;
-            let a = ray.direction.dot(&ray.direction);
-            let b = 2.0 * ray.direction.dot(&oc);
-            let c = oc.dot(&oc) - radius * radius;
+            let a = ray.direction.dot(ray.direction);
+            let b = 2.0 * ray.direction.dot(oc);
+            let c = oc.dot(oc) - radius * radius;
             let discriminant = b * b - 4.0 * a * c;
 
             if discriminant < 0.0 {
@@ -575,12 +560,12 @@ pub fn collide(solid: &Solid, ray: &Ray) -> Option<HitResult> {
             return Some(HitResult { t, normal });
         }
         Solid::Plane { normal, distance } => {
-            let dv = normal.dot(&ray.direction);
+            let dv = normal.dot(ray.direction);
             let center = *normal * *distance;
             if dv.abs() < EPSILON {
                 return None;
             }
-            let d2 = (center - ray.origin).dot(normal);
+            let d2 = (center - ray.origin).dot(*normal);
             let t = d2 / dv;
             if t < EPSILON {
                 return None;
@@ -702,6 +687,7 @@ impl ops::Div<Vec3> for Vec3 {
 }
 
 impl Vec3 {
+    #[inline(always)]
     pub fn zero() -> Vec3 {
         Vec3 {
             x: 0.0,
@@ -710,6 +696,7 @@ impl Vec3 {
         }
     }
 
+    #[inline(always)]
     pub fn one() -> Vec3 {
         Vec3 {
             x: 1.0,
@@ -718,6 +705,7 @@ impl Vec3 {
         }
     }
 
+    #[inline(always)]
     pub fn x_axis() -> Vec3 {
         Vec3 {
             x: 1.0,
@@ -726,6 +714,7 @@ impl Vec3 {
         }
     }
 
+    #[inline(always)]
     pub fn y_axis() -> Vec3 {
         Vec3 {
             x: 0.0,
@@ -734,6 +723,7 @@ impl Vec3 {
         }
     }
 
+    #[inline(always)]
     pub fn z_axis() -> Vec3 {
         Vec3 {
             x: 0.0,
@@ -742,6 +732,7 @@ impl Vec3 {
         }
     }
 
+    #[inline(always)]
     pub fn random() -> Vec3 {
         let dx = rand::thread_rng().gen_range(0.0..1.0);
         let dy = rand::thread_rng().gen_range(0.0..1.0);
@@ -749,20 +740,24 @@ impl Vec3 {
         Vec3::new(dx, dy, dz)
     }
 
+    #[inline(always)]
     pub fn new(x: f64, y: f64, z: f64) -> Vec3 {
         Vec3 { x, y, z }
     }
 
+    #[inline(always)]
     pub fn reflect(self: Self, axis: Vec3) -> Vec3 {
         // reflect the passed vector with respect at this vector used as axis
-        self - axis * 2.0 * self.dot(&axis)
+        self - axis * 2.0 * self.dot(axis)
     }
 
-    pub fn dot(self: &Self, other: &Vec3) -> f64 {
+    #[inline(always)]
+    pub fn dot(self: &Self, other: Vec3) -> f64 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
 
-    pub fn cross(self: &Self, other: &Vec3) -> Vec3 {
+    #[inline(always)]
+    pub fn cross(self, other: Vec3) -> Vec3 {
         Vec3::new(
             self.y * other.z - self.z * other.y,
             self.z * other.x - self.x * other.z,
@@ -770,15 +765,18 @@ impl Vec3 {
         )
     }
 
-    pub fn distance(self: &Self, other: Vec3) -> f64 {
-        (*self - other).len()
+    #[inline(always)]
+    pub fn distance(self, other: Vec3) -> f64 {
+        (self - other).len()
     }
 
-    pub fn len(self: &Self) -> f64 {
-        let squared_len = self.dot(&self);
+    #[inline(always)]
+    pub fn len(self) -> f64 {
+        let squared_len = self.dot(self);
         squared_len.sqrt()
     }
 
+    #[inline(always)]
     pub fn normalize(self: &Self) -> Vec3 {
         *self / self.len()
     }
