@@ -1,7 +1,8 @@
 # Raytracer
 
 This is a port of an simple raytracer that I wrote in c++/cuda for an university project to Rust in order to learn it.   
-It reads a simple scene files that let you specify very simple geometries like spheres, planes and also to import wavefront obj file. (Some examples below)    
+It reads a simple scene files that let you specify very simple geometries like spheres, planes and also to import wavefront obj file. (Some examples below).   
+To render the 3d model faster I have also implemented a simple grid acceleration datastructure where each cell contains the list of triangles (even just partially) present inside.     
 I also handled simple multithreading (with `rayon`) and model trasformations (that aren't present in the original implementation)  
 
 ## Table of contents
@@ -85,5 +86,7 @@ Here some of the generated images
 
 ## Future
 
-- I plan to use octree or grids to optimize the (now very slow) mesh rendering
-- If I reach reasonable time with Octree/Grid optimization, try render a video rendering each frame and then using ffmpeg  
+- Improve the acceleration datastructure for 3d model   
+- Use the normals present in the model, and maybe calculate them from the triangle position only if not present in the wavefront file
+- Textures or mtl (?)
+- If I reach reasonable time improving Octree/Grid optimization, try render a video, rendering each frame and then using ffmpeg to combine them  
