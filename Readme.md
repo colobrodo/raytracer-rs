@@ -68,6 +68,17 @@ Here some of the generated images
 
 ![Simple Sphere](./img/bunny.bmp)
 
+### Suzanne
+    size 1200 1200
+
+    model "./models/monkey.obj" white > scale 0.7 > rotate (0, 1, 0) 3.14 > translate (0, 0, 4)
+
+    # light sources
+    light (1, 0, 3) blue
+    light (-1, 0, 3) red
+
+![Simple Sphere](./img/monkey.bmp)
+
 ### Multiple Sphere
 
 ![Multiple Spheres](./img/multisphere.bmp)
