@@ -2,7 +2,6 @@ use std::fmt;
 
 use super::core::{Light, Mat4, Material, MaterialType, Scene, SceneObject, Solid, Vec3};
 
-
 pub struct SceneParser<'a> {
     content: &'a str,
     buffer: String,
@@ -30,7 +29,7 @@ impl FilePosition {
         self.column = 0;
         self.index += 1;
     }
-    
+
     fn advance(self: &mut Self) {
         self.column += 1;
         self.index += 1;
@@ -46,8 +45,8 @@ pub struct ParserError {
 impl ParserError {
     fn new(message: &str, position: FilePosition) -> ParserError {
         ParserError {
-            position, 
-            message: message.to_string()
+            position,
+            message: message.to_string(),
         }
     }
 
@@ -63,10 +62,13 @@ impl ParserError {
 
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} at {}:{}", self.message, self.position.line, self.position.column)
+        write!(
+            f,
+            "{} at {}:{}",
+            self.message, self.position.line, self.position.column
+        )
     }
 }
-
 
 type ParserResult<T> = Result<T, ParserError>;
 
@@ -85,7 +87,7 @@ impl SceneParser<'_> {
             position: FilePosition::new(),
             buffer: "".to_string(),
         }
-    } 
+    }
 
     fn get_current_char(self: &Self) -> Option<char> {
         self.content.chars().nth(self.position.index as usize)
@@ -99,8 +101,7 @@ impl SceneParser<'_> {
         if let Some(current_char) = self.get_current_char() {
             if current_char == '\n' {
                 self.position.on_new_line();
-            }
-            else {
+            } else {
                 self.position.advance();
             }
             return true;
@@ -125,8 +126,7 @@ impl SceneParser<'_> {
                 // consume the characters until the end of the line
                 // note: we don't consume the end-of-line here but at the end of the loop
                 self.advance_until(|c| c == '\n');
-            }
-            else if !current_char.is_whitespace() {
+            } else if !current_char.is_whitespace() {
                 break;
             }
             self.advance();
@@ -135,7 +135,7 @@ impl SceneParser<'_> {
 
     fn pop(self: &mut Self) -> String {
         // check if we already peeked without eating the next token
-        if !self.buffer.is_empty() {            
+        if !self.buffer.is_empty() {
             // TODO: should be possible to move to without clone first?
             let result = self.buffer.clone();
             self.buffer.clear();
@@ -157,12 +157,12 @@ impl SceneParser<'_> {
             if let Some(next_char) = parser.get_current_char() {
                 return next_char;
             }
-            return ' '
+            return ' ';
         };
 
         match current_char {
             // if char is a symbol return it
-            ',' | '(' | ')' | ':' | '>'  => {
+            ',' | '(' | ')' | ':' | '>' => {
                 self.advance();
                 result.push(current_char);
             }
@@ -175,7 +175,7 @@ impl SceneParser<'_> {
                     // eat also the last quote of the string
                     if !in_string {
                         break;
-                    } 
+                    }
                     in_string = current_char != '"';
                 }
             }
@@ -184,7 +184,7 @@ impl SceneParser<'_> {
                 if current_char == '+' || current_char == '-' {
                     current_char = enqueque(self, &mut result);
                 }
- 
+
                 while current_char.is_digit(10) {
                     current_char = enqueque(self, &mut result);
                 }
@@ -196,8 +196,8 @@ impl SceneParser<'_> {
                     while current_char.is_digit(10) {
                         current_char = enqueque(self, &mut result);
                     }
-                 }
-             }
+                }
+            }
 
             _ => {
                 while current_char.is_alphabetic() {
@@ -222,11 +222,14 @@ impl SceneParser<'_> {
 
     fn parse_float(self: &mut Self) -> ParserResult<f64> {
         let next_token = self.pop();
-        // TODO: return a Result with ParserError and do not println hard 
+        // TODO: return a Result with ParserError and do not println hard
         if let Ok(num) = next_token.parse::<f64>() {
             Ok(num)
-        } else {            
-            let message = format!("error parsing file: cannot interp '{}' as a float", next_token);
+        } else {
+            let message = format!(
+                "error parsing file: cannot interp '{}' as a float",
+                next_token
+            );
             self.error(&message)
         }
     }
@@ -237,7 +240,10 @@ impl SceneParser<'_> {
         let next_lexem = self.pop();
         if next_lexem != expected_lexem {
             // TODO: return parser error
-            let message = format!("error parsing the scene file: expected '{}', getting '{}' instead", expected_lexem, next_lexem);
+            let message = format!(
+                "error parsing the scene file: expected '{}', getting '{}' instead",
+                expected_lexem, next_lexem
+            );
             self.error(&message)
         } else {
             Ok(())
@@ -256,11 +262,10 @@ impl SceneParser<'_> {
         return false;
     }
 
-
     fn parse_header(self: &mut Self) -> ParserResult<(f64, f64)> {
         // TODO: unused for now
         self.match_token("size")?;
-        let width  = self.parse_float()?;
+        let width = self.parse_float()?;
         let height = self.parse_float()?;
         Ok((width, height))
     }
@@ -276,7 +281,7 @@ impl SceneParser<'_> {
         self.match_token(")")?;
         return Ok(Vec3::new(x, y, z));
     }
-    
+
     // TODO: substitute return value with Vec3
     fn parse_color(self: &mut Self) -> ParserResult<Vec3> {
         // predefined color
@@ -319,7 +324,6 @@ impl SceneParser<'_> {
             color,
             type_: material_type,
         })
-
     }
 
     fn parse_sphere(self: &mut Self) -> ParserResult<SceneObject> {
@@ -328,28 +332,22 @@ impl SceneParser<'_> {
         let radius = self.parse_float()?;
         let material = self.parse_material()?;
         Ok(SceneObject {
-            solid: Solid::Sphere {
-                center,
-                radius,
-            },
+            solid: Solid::Sphere { center, radius },
             material,
         })
     }
-    
+
     fn parse_plane(self: &mut Self) -> ParserResult<SceneObject> {
         self.match_token("plane")?;
         let normal = self.parse_vec3()?;
         let distance = self.parse_float()?;
         let material = self.parse_material()?;
         Ok(SceneObject {
-            solid: Solid::Plane {
-                normal,
-                distance,
-            },
+            solid: Solid::Plane { normal, distance },
             material,
         })
     }
-    
+
     fn parse_string(self: &mut Self) -> ParserResult<String> {
         let mut next_token = self.pop();
         // TODO: return parse error when the popped token don't end and starts with a quote
@@ -365,23 +363,22 @@ impl SceneParser<'_> {
             let next_token = self.peek();
             let next_trasform = match next_token.as_str() {
                 "scale" => {
-                    self.pop();  // discarding "scale"
+                    self.pop(); // discarding "scale"
                     let factor = self.parse_float()?;
                     Mat4::scale(factor)
-                },
+                }
                 "translate" => {
-                    self.pop();  // discarding "translate"
+                    self.pop(); // discarding "translate"
                     let offset = self.parse_vec3()?;
                     Mat4::translate(offset)
-                },
+                }
                 "rotate" => {
-                    self.pop();  // discarding "rotate"
+                    self.pop(); // discarding "rotate"
                     let axis = self.parse_vec3()?;
                     let angle = self.parse_float()?;
                     Mat4::rotate(axis, angle)
-                },
-                _ => return self.error("unexpected token while parsing trasform")
-
+                }
+                _ => return self.error("unexpected token while parsing trasform"),
             };
             trasform = trasform.then(&next_trasform);
         }
@@ -399,21 +396,19 @@ impl SceneParser<'_> {
                 println!("{}", err);
                 self.error::<Solid>(&message).expect_err("")
             })
-            .map(|model| {
-                SceneObject {
-                    material,
-                    solid: model,
-                }
+            .map(|model| SceneObject {
+                material,
+                solid: model,
             })
-    } 
+    }
 
     fn parse_light(self: &mut Self) -> ParserResult<Light> {
         self.match_token("light")?;
         let position = self.parse_vec3()?;
         let color = self.parse_color()?;
         return Ok(Light {
-            position, 
-            color, 
+            position,
+            color,
             radius: 2.0,
         });
     }
@@ -445,19 +440,15 @@ impl SceneParser<'_> {
                 }
                 _ => {
                     let message = format!("unexpected token '{}'", next_token);
-                    return self.error(&message)
+                    return self.error(&message);
                 }
             }
         }
-        let scene = Scene {
-            objects,
-            lights,
-        };
+        let scene = Scene { objects, lights };
         Ok(ImageData {
-            width: width as u32, 
-            height: height as u32, 
-            scene
+            width: width as u32,
+            height: height as u32,
+            scene,
         })
     }
-
 }

@@ -1,10 +1,8 @@
 use std::error::Error;
 use std::fs::File;
 use std::vec::Vec;
-use std::{cell, default};
 use std::{io::BufReader, ops};
 
-use image::imageops::FilterType::Triangle;
 use obj::{load_obj, Obj};
 
 use rand::{self, Rng};
