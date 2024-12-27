@@ -1,7 +1,6 @@
 size 1200 1200
 
-model "./models/bunny_lp.obj" white > scale 0.4 > translate (0, 0, 7)
+model "./models/monkey.obj" white > scale 0.5 > rotate (0, 1, 0) 3.14 > translate (0, 0, 4)
 
 # light sources
-light (0, 1, 2) red
-light (0, 0, 1) green
+light (1, 0, 0) blue
