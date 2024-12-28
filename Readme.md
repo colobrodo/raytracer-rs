@@ -61,11 +61,11 @@ Here some of the generated images
 
     size 1200 1200
 
-    model "./models/bunny_lp.obj" white > scale 0.4 > translate (0, 0, -7)
+    model "./models/bunny_lp.obj" white > scale 0.6 > rotate (1, 0, 0) 3.14 > translate (0, 0, 7)
 
     # light sources
-    light (0, 1, -2) blue
-    light (0, 0, -1) green
+    light (1, 0, 2) green
+    light (-1, 0, 2) blue
 
 ![Simple Sphere](./img/bunny.bmp)
 
