@@ -16,13 +16,17 @@ use raytracing::parser::SceneParser;
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// the input path to the scene file
     scene: String,
-
-    #[arg(short, long, default_value_t ="output.bmp".to_string())]
+    /// the path where is saved the rendered image as bitmap
+    #[arg(short, long, default_value = "output.bmp")]
     output: String,
-
+    /// the number of ray shooted per pixel
     #[arg(short, long, default_value_t = 20)]
     sample_rate: u32,
+    /// apply gamma correction to the final image
+    #[arg(long, default_value = "false")]
+    gamma_correction: bool,
 }
 
 impl From<Vec3> for image::Rgb<u8> {
@@ -32,6 +36,13 @@ impl From<Vec3> for image::Rgb<u8> {
         let b = min((value.z * 255.0) as u8, 255);
         image::Rgb([r, g, b])
     }
+}
+
+fn gamma_correction(value: f64) -> f64 {
+    if value > 0.0 {
+        return value.sqrt();
+    }
+    return 0.0;
 }
 
 fn get_bounce_direction(ray: &Ray, material: &Material, normal: Vec3) -> Vec3 {
@@ -191,13 +202,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let mut buffer = ImageBuffer::new(width, height);
+    let mut buffer: ImageBuffer<Rgb<u8>, Vec<_>> = ImageBuffer::new(width, height);
 
     // write the raytracing result into the ImageBuffer
     for (x, y, pixel) in buffer.enumerate_pixels_mut() {
         let idx = (x + width * y) as usize;
-        let p: Rgb<u8> = pixels[idx].into();
-        *pixel = p;
+        let mut p = pixels[idx];
+        if args.gamma_correction {
+            p.x = gamma_correction(p.x);
+            p.y = gamma_correction(p.y);
+            p.z = gamma_correction(p.z);
+        }
+        *pixel = p.into();
     }
 
     let total_time = start.elapsed();
