@@ -1,4 +1,3 @@
-use std::fmt::format;
 use std::fs;
 use std::time::Instant;
 use std::{cmp::min, error::Error};
@@ -19,7 +18,7 @@ use raytracing::parser::SceneParser;
 struct Args {
     scene: String,
 
-    #[arg(short, long, default_value_t = ("output.bmp".to_string()))]
+    #[arg(short, long, default_value_t ="output.bmp".to_string())]
     output: String,
 
     #[arg(short, long, default_value_t = 20)]
@@ -118,11 +117,41 @@ fn cast(scene: &Scene, ray: &Ray) -> Vec3 {
     return color;
 }
 
+// TODO: add field of view to the camera
+struct Camera {
+    position: Vec3,
+    zoom: f64,
+}
+
+impl Camera {
+    fn new(position: Vec3) -> Self {
+        Self {
+            position,
+            zoom: 1.0,
+        }
+    }
+
+    fn default() -> Self {
+        Self {
+            position: Vec3::zero(),
+            zoom: 1.0,
+        }
+    }
+
+    /// create a ray from the camera position to the relative uv coordinate on his screen
+    fn shoot_to(&self, u: f64, v: f64) -> Ray {
+        Ray {
+            origin: self.position,
+            direction: Vec3::new(u, v, self.zoom) - self.position,
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     // TODO: make the camera settable also from the file, with a custom orientation
-    let cam_position = Vec3::zero();
+    let camera = Camera::default();
 
     let content = fs::read_to_string(args.scene)?;
     let mut parser = SceneParser::new(&content);
@@ -137,8 +166,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let width = data.width;
     let height = data.height;
-
-    let zoom = 1.0;
 
     let total_stripes = 32;
     let mut pixels = vec![Vec3::zero(); (width * height) as usize];
@@ -158,10 +185,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let u = (x as f64 + x_offset - (width as f64) * 0.5) / (width as f64);
                 let v = (y as f64 + y_offset - (height as f64) * 0.5) / (height as f64);
 
-                let ray = Ray {
-                    origin: cam_position,
-                    direction: Vec3::new(u, v, zoom) - cam_position,
-                };
+                let ray = camera.shoot_to(u, v);
                 *vpixel += cast(&data.scene, &ray) / (args.sample_rate as f64);
             }
         }
