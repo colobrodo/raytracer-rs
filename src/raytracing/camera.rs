@@ -43,7 +43,7 @@ impl Camera {
     }
 
     /// Create a ray from the camera position to the relative uv coordinate on his screen.
-    fn shoot_to(&self, u: f64, v: f64) -> Ray {
+    pub fn shoot_to(&self, u: f64, v: f64) -> Ray {
         let direction = self.forward * self.zoom + self.up * v + self.right * u;
         Ray {
             origin: self.position,
