@@ -133,7 +133,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     // TODO: make the camera settable also from the file, with a custom orientation
-    let camera = Camera::look_at(Vec3::new(4.0, 0.1, 0.0), Vec3::new(0.0, 0.0, 7.0));
+    let camera = Camera::look_at(Vec3::new(4.0, -10.0, 0.0), Vec3::new(0.0, 0.0, 7.0));
 
     let content = fs::read_to_string(args.scene)?;
     let mut parser = SceneParser::new(&content);

@@ -41,6 +41,8 @@ pub struct SceneObject {
 
 #[derive(Clone, Copy)]
 pub struct HitResult {
+    // TODO: is not better to store directly the intersection point?
+    //       we should always recompute it from t at least in the end raytracing procedure
     pub t: f64,
     pub normal: Vec3,
 }
@@ -97,18 +99,19 @@ impl Box3 {
     }
 
     fn collide(self: &Self, ray: &Ray) -> bool {
-        let mut dirfrac = Vec3::zero();
-        dirfrac.x = 1.0 / ray.direction.x;
-        dirfrac.y = 1.0 / ray.direction.y;
-        dirfrac.z = 1.0 / ray.direction.z;
-        // lb is the corner of AABB with minimal coordinates - left bottom, rt is maximal corner
-        // r.org is origin of ray
-        let t1 = (self.min().x - ray.origin.x) * dirfrac.x;
-        let t2 = (self.max().x - ray.origin.x) * dirfrac.x;
-        let t3 = (self.min().y - ray.origin.y) * dirfrac.y;
-        let t4 = (self.max().y - ray.origin.y) * dirfrac.y;
-        let t5 = (self.min().z - ray.origin.z) * dirfrac.z;
-        let t6 = (self.max().z - ray.origin.z) * dirfrac.z;
+        let dirfrac = Vec3::new(
+            1.0 / ray.direction.x,
+            1.0 / ray.direction.y,
+            1.0 / ray.direction.z,
+        );
+        let relative_min_box = self.min() - ray.origin;
+        let relative_max_box = self.max() - ray.origin;
+        let t1 = relative_min_box.x * dirfrac.x;
+        let t2 = relative_max_box.x * dirfrac.x;
+        let t3 = relative_min_box.y * dirfrac.y;
+        let t4 = relative_max_box.y * dirfrac.y;
+        let t5 = relative_min_box.z * dirfrac.z;
+        let t6 = relative_max_box.z * dirfrac.z;
 
         let tmin = t1.min(t2).max(t3.min(t4)).max(t5.min(t6));
         let tmax = t1.max(t2).min(t3.max(t4)).min(t5.max(t6));
@@ -287,28 +290,31 @@ struct ModelGrid {
 }
 
 fn triangle_ray_intersection(triangle: (Vec3, Vec3, Vec3), ray: &Ray) -> Option<HitResult> {
+    // https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
     let (v0, v1, v2) = triangle;
     let v0v1 = v1 - v0;
     let v0v2 = v2 - v0;
-    let pvec = ray.direction.cross(v0v2);
-    let det = v0v1.dot(pvec);
+    let ray_cross_e2 = ray.direction.cross(v0v2);
+    let determinant = v0v1.dot(ray_cross_e2);
     // ray and triangle are parallel if det is close to 0
-    if det.abs() < EPSILON {
+    if determinant.abs() < EPSILON {
         return None;
     }
-    let inv_det = 1.0 / det;
-    let tvec = ray.direction - v0;
-    let u = tvec.dot(pvec) * inv_det;
+    let inverse_determinant = 1.0 / determinant;
+    let tvec = ray.origin - v0;
+    let u = tvec.dot(ray_cross_e2) * inverse_determinant;
     if u < 0.0 || u > 1.0 {
         return None;
     }
+
     let qvec = tvec.cross(v0v1);
-    let v = ray.direction.dot(qvec) * inv_det;
+    let v = ray.direction.dot(qvec) * inverse_determinant;
     if v < 0.0 || u + v > 1.0 {
         return None;
     }
 
-    let t = v0v2.dot(qvec) * inv_det;
+    // At this stage we can compute t to find out where the intersection point is on the line
+    let t = v0v2.dot(qvec) * inverse_determinant;
     if t < 0.0 {
         return None;
     }
