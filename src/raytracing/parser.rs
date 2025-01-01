@@ -2,7 +2,8 @@ use std::fmt;
 
 use super::{
     camera::Camera,
-    core::{Light, Mat4, Material, MaterialType, Scene, SceneObject, Solid, Vec3},
+    core::{Light, Mat4, Material, MaterialType, Scene, SceneObject, Solid},
+    Vec3,
 };
 
 pub struct SceneParser<'a> {

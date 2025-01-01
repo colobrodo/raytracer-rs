@@ -10,8 +10,8 @@ use rayon::prelude::*;
 use clap::Parser;
 
 mod raytracing;
-use raytracing::camera::Camera;
-use raytracing::core::{hit, Material, MaterialType, Ray, Scene, Vec3};
+use raytracing::core::{hit, Material, MaterialType, Ray, Scene};
+use raytracing::math::Vec3;
 use raytracing::parser::{ImageData, SceneParser};
 
 #[derive(Debug, Parser)]
