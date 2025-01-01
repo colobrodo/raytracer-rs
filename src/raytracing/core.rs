@@ -1,7 +1,7 @@
-use super::math::Vec3;
-use std::{error::Error, io::BufReader};
+use super::math::{Ray, Vec3};
 use std::fs::File;
 use std::vec::Vec;
+use std::{error::Error, io::BufReader};
 
 use obj::{load_obj, Obj};
 
@@ -580,17 +580,5 @@ pub fn collide(solid: &Solid, ray: &Ray) -> Option<HitResult> {
             }
             ray_intersect(model, grid, ray)
         }
-    }
-}
-
-#[derive(Clone)]
-pub struct Ray {
-    pub origin: Vec3,
-    pub direction: Vec3,
-}
-
-impl Ray {
-    pub fn at(self: &Self, t: f64) -> Vec3 {
-        self.origin + self.direction * t
     }
 }

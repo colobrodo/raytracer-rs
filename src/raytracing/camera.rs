@@ -1,5 +1,4 @@
-use super::core::Ray;
-use super::math::Vec3;
+use super::math::{Ray, Vec3};
 
 // TODO: add field of view to the camera
 pub struct Camera {
