@@ -12,7 +12,7 @@ use clap::Parser;
 mod raytracing;
 use raytracing::camera::Camera;
 use raytracing::core::{hit, Material, MaterialType, Ray, Scene, Vec3};
-use raytracing::parser::SceneParser;
+use raytracing::parser::{ImageData, SceneParser};
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
@@ -132,9 +132,6 @@ fn cast(scene: &Scene, ray: &Ray) -> Vec3 {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    // TODO: make the camera settable also from the file, with a custom orientation
-    let camera = Camera::look_at(Vec3::new(4.0, -10.0, 0.0), Vec3::new(0.0, 0.0, 7.0));
-
     let content = fs::read_to_string(args.scene)?;
     let mut parser = SceneParser::new(&content);
     let parser_result = parser.parse_scene();
@@ -144,10 +141,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err(Box::from(format!("parser error {}", parser_error.message)));
     }
 
-    let data = parser_result.unwrap();
-
-    let width = data.width;
-    let height = data.height;
+    let ImageData {
+        width,
+        height,
+        camera,
+        scene,
+    } = parser_result.unwrap();
 
     let total_stripes = 32;
     let mut pixels = vec![Vec3::zero(); (width * height) as usize];
@@ -168,7 +167,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let v = (y as f64 + y_offset - (height as f64) * 0.5) / (height as f64);
 
                 let ray = camera.shoot_to(u, v);
-                *vpixel += cast(&data.scene, &ray) / (args.sample_rate as f64);
+                *vpixel += cast(&scene, &ray) / (args.sample_rate as f64);
             }
         }
     });

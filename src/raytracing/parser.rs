@@ -1,6 +1,9 @@
 use std::fmt;
 
-use super::core::{Light, Mat4, Material, MaterialType, Scene, SceneObject, Solid, Vec3};
+use super::{
+    camera::Camera,
+    core::{Light, Mat4, Material, MaterialType, Scene, SceneObject, Solid, Vec3},
+};
 
 pub struct SceneParser<'a> {
     content: &'a str,
@@ -75,6 +78,7 @@ type ParserResult<T> = Result<T, ParserError>;
 pub struct ImageData {
     pub width: u32,
     pub height: u32,
+    pub camera: Camera,
     pub scene: Scene,
 }
 
@@ -357,6 +361,23 @@ impl SceneParser<'_> {
         Ok(next_token)
     }
 
+    fn parse_camera(&mut self) -> ParserResult<Camera> {
+        if self.maybe_match("camera") {
+            let mut position = Vec3::zero();
+            if self.maybe_match("from") {
+                position = self.parse_vec3()?;
+            }
+            let point = if self.maybe_match("to") {
+                self.parse_vec3()?
+            } else {
+                position + Vec3::z_axis()
+            };
+            Ok(Camera::look_at(position, point))
+        } else {
+            Ok(Camera::default())
+        }
+    }
+
     fn parse_trasformation(self: &mut Self) -> ParserResult<Mat4> {
         let mut trasform = Mat4::identity();
         while self.maybe_match(">") {
@@ -416,6 +437,7 @@ impl SceneParser<'_> {
     pub fn parse_scene(self: &mut Self) -> ParserResult<ImageData> {
         // main routine that parse the whole file
         let (width, height) = self.parse_header()?;
+        let camera = self.parse_camera()?;
 
         let mut objects = Vec::new();
         let mut lights = Vec::new();
@@ -448,6 +470,7 @@ impl SceneParser<'_> {
         Ok(ImageData {
             width: width as u32,
             height: height as u32,
+            camera,
             scene,
         })
     }
