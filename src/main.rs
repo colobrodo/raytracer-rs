@@ -41,9 +41,10 @@ impl From<Vec3> for image::Rgb<u8> {
 
 fn gamma_correction(value: f64) -> f64 {
     if value > 0.0 {
-        return value.sqrt();
+        value.powf(1.0 / 2.2)
+    } else {
+        0.0
     }
-    return 0.0;
 }
 
 fn get_bounce_direction(ray: &Ray, material: &Material, normal: Vec3) -> Vec3 {
