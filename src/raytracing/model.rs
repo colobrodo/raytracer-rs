@@ -2,19 +2,47 @@ use obj::Obj;
 
 use super::{Box3, HitResult, Mat4, Ray, RayHittable, RayIntersectable, Vec3};
 
-pub type Triangle = (Vec3, Vec3, Vec3);
+pub struct Triangle(Vec3, Vec3, Vec3);
+pub type TriangleNormals = (Vec3, Vec3, Vec3);
 
 #[derive(Debug)]
 pub struct Model {
     obj: Obj,
     trasform: Mat4,
+    normal_trasform: Mat4,
     pub bounding_box: Box3,
+}
+
+impl Triangle {
+    /// Calculate barycentric coordinates of a point in the triangle
+    fn barycentric(&self, point: Vec3) -> (f64, f64, f64) {
+        let Triangle(v0, v1, v2) = *self;
+        let s0 = v1 - v0;
+        let s1 = v2 - v0;
+        let s2 = point - v0;
+        let d00 = s0.dot(s0);
+        let d01 = s0.dot(s1);
+        let d11 = s1.dot(s1);
+        let d20 = s2.dot(s0);
+        let d21 = s2.dot(s1);
+        let denominator = d00 * d11 - d01 * d01;
+        let v = (d11 * d20 - d01 * d21) / denominator;
+        let w = (d00 * d21 - d01 * d20) / denominator;
+        let u = 1.0 - v - w;
+        (u, v, w)
+    }
+
+    pub fn normal_on_point(&self, point: Vec3, normals: TriangleNormals) -> Vec3 {
+        let (u, v, w) = self.barycentric(point);
+        let (n0, n1, n2) = normals;
+        (n0 * u + n1 * v + n2 * w).normalize()
+    }
 }
 
 impl RayIntersectable for Triangle {
     fn intersect(&self, ray: &Ray) -> Option<f64> {
         // https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
-        let (v0, v1, v2) = *self;
+        let Triangle(v0, v1, v2) = *self;
         let v0v1 = v1 - v0;
         let v0v2 = v2 - v0;
         let ray_cross_e2 = ray.direction.cross(v0v2);
@@ -49,7 +77,7 @@ impl RayIntersectable for Triangle {
 impl RayHittable for Triangle {
     fn hit(&self, ray: &Ray) -> Option<HitResult> {
         let t = self.intersect(ray)?;
-        let (v0, v1, v2) = *self;
+        let Triangle(v0, v1, v2) = *self;
         let v0v1 = v1 - v0;
         let v0v2 = v2 - v0;
         Some(HitResult {
@@ -62,13 +90,21 @@ impl RayHittable for Triangle {
 impl Model {
     pub fn new(obj: Obj, trasform: Mat4) -> Model {
         let bounding_box = calculate_bounding_box(&obj, &trasform);
+        let normal_trasform = trasform
+            .inverse()
+            .expect("Error: the provided matrix to transform the model is not invertible")
+            .transpose();
         Model {
             obj,
             trasform,
+            normal_trasform,
             bounding_box,
         }
     }
 
+    // TODO: is maybe better to apply the trasform when loading the model and not each time we retrive a vertex
+    //       since we retrive the same vertex multiple times, is also true that if we see only a small portion of the model
+    //       is maybe more efficent in this way
     pub fn get_triangle(&self, i: usize) -> Triangle {
         let v0: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 0] as usize]
             .position
@@ -82,7 +118,24 @@ impl Model {
             .position
             .into();
         let v2 = self.trasform.apply(v2);
-        (v0, v1, v2)
+        Triangle(v0, v1, v2)
+    }
+
+    /// Returns the normals on the vertices of the triangle
+    pub fn get_triangle_normals(&self, i: usize) -> TriangleNormals {
+        let v0: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 0] as usize]
+            .normal
+            .into();
+        let v0 = self.normal_trasform.apply(v0);
+        let v1: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 1] as usize]
+            .normal
+            .into();
+        let v1 = self.normal_trasform.apply(v1);
+        let v2: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 2] as usize]
+            .normal
+            .into();
+        let v2 = self.normal_trasform.apply(v2);
+        (v0.normalize(), v1.normalize(), v2.normalize())
     }
 
     fn iter_triangles(&self) -> impl Iterator<Item = Triangle> + '_ {
@@ -96,7 +149,7 @@ impl Model {
         let mut cells_triangles: Vec<Vec<usize>> =
             vec![Vec::new(); cells_per_side * cells_per_side * cells_per_side];
         let cell_size = (self.bounding_box.max() - self.bounding_box.min()) / cells_per_side as f64;
-        for (i, (v0, v1, v2)) in self.iter_triangles().enumerate() {
+        for (i, Triangle(v0, v1, v2)) in self.iter_triangles().enumerate() {
             // triangle bounding box
             let mut bbox = Box3::from_single_point(v0);
             bbox.include(v1);

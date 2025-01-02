@@ -1,5 +1,5 @@
 use super::math::{Mat4, Ray, Vec3};
-use super::model::{Model, ModelGrid};
+use super::model::{Model, ModelGrid, Triangle};
 use super::{HitResult, RayHittable, RayIntersectable};
 use std::fs::File;
 use std::vec::Vec;
@@ -124,7 +124,8 @@ fn ray_intersect(model: &Model, grid: &ModelGrid, ray: &Ray) -> Option<HitResult
     let t_delta_y = step_y as f64 * cell_size.y / ray.direction.y;
     let t_delta_z = step_z as f64 * cell_size.z / ray.direction.z;
 
-    let mut closest_hit: Option<HitResult> = None;
+    // save the closest triangle hittend and the t value for that hit
+    let mut closest_hit: Option<(usize, f64)> = None;
     while ix >= 0
         && ix < grid.cells_per_side() as _
         && iy >= 0
@@ -135,16 +136,16 @@ fn ray_intersect(model: &Model, grid: &ModelGrid, ray: &Ray) -> Option<HitResult
         // checking for collision inside the list of triangles of this cell
         for &triangle_i in grid.triangles(ix as _, iy as _, iz as _) {
             let triangle = model.get_triangle(triangle_i);
-            if let Some(hit) = triangle.hit(ray) {
-                if closest_hit.is_none() || hit.t < closest_hit.unwrap().t {
-                    closest_hit = Some(hit);
+            if let Some(t) = triangle.intersect(ray) {
+                if closest_hit.is_none() || t < closest_hit.unwrap().1 {
+                    closest_hit = Some((triangle_i, t));
                 }
             }
         }
         // found the closest hit in the list of triangles in the current cell
         // no need to proceed further searching in farther cells
         if closest_hit.is_some() {
-            return closest_hit;
+            break;
         }
         // advancing the ray to the next cell using the DDA algorithm
         if t_max_x < t_max_y {
@@ -165,7 +166,15 @@ fn ray_intersect(model: &Model, grid: &ModelGrid, ray: &Ray) -> Option<HitResult
             }
         }
     }
-    closest_hit
+    closest_hit.map(|(triangle_i, t)| {
+        let triangle = model.get_triangle(triangle_i);
+        let hit_point = ray.at(t);
+        let normals = model.get_triangle_normals(triangle_i);
+        HitResult {
+            t,
+            normal: triangle.normal_on_point(hit_point, normals),
+        }
+    })
 }
 
 impl RayHittable for Solid {

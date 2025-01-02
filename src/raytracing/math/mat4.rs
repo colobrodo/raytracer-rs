@@ -59,6 +59,90 @@ impl Mat4 {
         }
     }
 
+    // Compute the determinant of a 3x3 sub-matrix
+    fn determinant_3x3(&self) -> f64 {
+        let m = &self.value;
+        m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6])
+            + m[2] * (m[3] * m[7] - m[4] * m[6])
+    }
+
+    // Create a 3x3 sub-matrix by removing a row and a column
+    fn sub_matrix(&self, row_to_remove: usize, col_to_remove: usize) -> Mat4 {
+        let mut sub_values = [0.0; 16];
+        let mut idx = 0;
+        for row in 0..4 {
+            if row == row_to_remove {
+                continue;
+            }
+            for col in 0..4 {
+                if col == col_to_remove {
+                    continue;
+                }
+                sub_values[idx] = self.value[row * 4 + col];
+                idx += 1;
+            }
+        }
+        Mat4 { value: sub_values }
+    }
+
+    // Compute the determinant of the 4x4 matrix
+    fn determinant(&self) -> f64 {
+        let mut det = 0.0;
+        for i in 0..4 {
+            let sub_matrix = self.sub_matrix(0, i);
+            det += ((-1.0f64).powi(i as i32)) * self.value[i] * sub_matrix.determinant_3x3();
+        }
+        det
+    }
+
+    pub fn inverse(&self) -> Option<Mat4> {
+        let det = self.determinant();
+        if det == 0.0 {
+            return None;
+        }
+
+        let mut cofactors = [0.0; 16];
+        for row in 0..4 {
+            for col in 0..4 {
+                let sub_matrix = self.sub_matrix(row, col);
+                let cofactor = ((-1.0f64).powi((row + col) as i32)) * sub_matrix.determinant_3x3();
+                cofactors[col * 4 + row] = cofactor; // Transpose in-place
+            }
+        }
+
+        let mut inverted_values = [0.0; 16];
+        for i in 0..16 {
+            inverted_values[i] = cofactors[i] / det;
+        }
+
+        Some(Mat4 {
+            value: inverted_values,
+        })
+    }
+
+    pub fn transpose(&self) -> Mat4 {
+        Mat4 {
+            value: [
+                self.value[0],
+                self.value[4],
+                self.value[8],
+                self.value[12],
+                self.value[1],
+                self.value[5],
+                self.value[9],
+                self.value[13],
+                self.value[2],
+                self.value[6],
+                self.value[10],
+                self.value[14],
+                self.value[3],
+                self.value[7],
+                self.value[11],
+                self.value[15],
+            ],
+        }
+    }
+
     pub fn then(&self, other: &Mat4) -> Mat4 {
         // other * self
         let _a11 = other.value[0] * self.value[0]
