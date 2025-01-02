@@ -1,9 +1,10 @@
-use super::math::{Box3, Mat4, Ray, Vec3};
+use super::math::{Mat4, Ray, Vec3};
+use super::model::{Model, ModelGrid, Triangle};
 use std::fs::File;
 use std::vec::Vec;
 use std::{error::Error, io::BufReader};
 
-use obj::{load_obj, Obj};
+use obj::load_obj;
 
 const EPSILON: f64 = 1e-5;
 
@@ -52,21 +53,52 @@ pub struct RaycastResult<'a> {
 }
 
 #[derive(Debug)]
-struct Model {
-    obj: Obj,
-    trasform: Mat4,
-    bounding_box: Box3,
+pub enum Solid {
+    Sphere { center: Vec3, radius: f64 },
+    Plane { normal: Vec3, distance: f64 },
+    Model { model: Model, grid: ModelGrid },
 }
 
-#[derive(Debug)]
-struct ModelGrid {
-    bounding_box: Box3,
-    cells_per_side: u32,
-    offset_array: Vec<usize>,
-    triangle_indices: Vec<usize>,
+impl Solid {
+    pub fn load_model(filename: &str, trasform: Mat4) -> Result<Solid, Box<dyn Error>> {
+        let input = BufReader::new(File::open(filename)?);
+        let obj = load_obj(input)?;
+        // DEBUG: remove commented println!
+        // println!("loaded {}, with bounding box {:?}", filename, bounding_box);
+        let model = Model::new(obj, trasform);
+        let grid = model.create_grid(32);
+        // println!("Created grid with this offsets: {:?}", grid.offset_array);
+        Ok(Solid::Model { grid, model })
+    }
 }
 
-fn triangle_ray_intersection(triangle: (Vec3, Vec3, Vec3), ray: &Ray) -> Option<HitResult> {
+pub fn hit<'a>(scene: &'a Scene, ray: &'a Ray) -> Option<RaycastResult<'a>> {
+    let mut closest_t = f64::INFINITY;
+    let mut closest_object = None;
+    let mut raycast_to_closest = None;
+    for object in &scene.objects {
+        if let Some(result) = collide(&object.solid, ray) {
+            // avoid t too small (shadow acne)
+            if result.t <= EPSILON {
+                continue;
+            }
+
+            if result.t < closest_t {
+                closest_t = result.t;
+                raycast_to_closest = Some(result);
+                closest_object = Some(object);
+            }
+        }
+    }
+
+    closest_object.map(|object| RaycastResult {
+        hitted_object: object,
+        hit_point: ray.at(closest_t),
+        normal: raycast_to_closest.unwrap().normal,
+    })
+}
+
+fn triangle_ray_intersection(triangle: Triangle, ray: &Ray) -> Option<HitResult> {
     // https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
     let (v0, v1, v2) = triangle;
     let v0v1 = v1 - v0;
@@ -74,7 +106,7 @@ fn triangle_ray_intersection(triangle: (Vec3, Vec3, Vec3), ray: &Ray) -> Option<
     let ray_cross_e2 = ray.direction.cross(v0v2);
     let determinant = v0v1.dot(ray_cross_e2);
     // ray and triangle are parallel if det is close to 0
-    if determinant.abs() < EPSILON {
+    if determinant.abs() < f64::EPSILON {
         return None;
     }
     let inverse_determinant = 1.0 / determinant;
@@ -137,11 +169,11 @@ fn ray_intersect(model: &Model, grid: &ModelGrid, ray: &Ray) -> Option<HitResult
 
     let mut closest_hit: Option<HitResult> = None;
     while ix >= 0
-        && ix < grid.cells_per_side as _
+        && ix < grid.cells_per_side() as _
         && iy >= 0
-        && iy < grid.cells_per_side as _
+        && iy < grid.cells_per_side() as _
         && iz >= 0
-        && iz < grid.cells_per_side as _
+        && iz < grid.cells_per_side() as _
     {
         // checking for collision inside the list of triangles of this cell
         for triangle_i in grid.triangles(ix as _, iy as _, iz as _) {
@@ -177,244 +209,6 @@ fn ray_intersect(model: &Model, grid: &ModelGrid, ray: &Ray) -> Option<HitResult
         }
     }
     closest_hit
-}
-
-impl ModelGrid {
-    fn new(model: &Model, cells_per_side: usize) -> ModelGrid {
-        // foreach box create a vec
-        let mut cells_triangles: Vec<Vec<usize>> =
-            vec![Vec::new(); cells_per_side * cells_per_side * cells_per_side];
-        let cell_size =
-            (model.bounding_box.max() - model.bounding_box.min()) / cells_per_side as f64;
-        for (i, (v0, v1, v2)) in model.iter_triangles().enumerate() {
-            // triangle bounding box
-            let mut bbox = Box3::from_single_point(v0);
-            bbox.include(v1);
-            bbox.include(v2);
-            // check each corner of the bounding box which cell intersect
-            // get the buffer index of the minimim corner of the bounding box
-            let min_point = (bbox.min() - model.bounding_box.min()) / cell_size;
-            let min_ix = (min_point.x as usize).min(cells_per_side - 1);
-            let min_iy = (min_point.y as usize).min(cells_per_side - 1);
-            let min_iz = (min_point.z as usize).min(cells_per_side - 1);
-            // get the buffer index of the maximim corner of the bounding box
-            let max_point = (bbox.max() - model.bounding_box.min()) / cell_size;
-            let max_ix = (max_point.x as usize).min(cells_per_side - 1);
-            let max_iy = (max_point.y as usize).min(cells_per_side - 1);
-            let max_iz = (max_point.z as usize).min(cells_per_side - 1);
-            for ix in min_ix..=max_ix {
-                for iy in min_iy..=max_iy {
-                    for iz in min_iz..=max_iz {
-                        let buffer_index =
-                            iz * cells_per_side * cells_per_side + iy * cells_per_side + ix;
-                        // adds to that vec the triangle index i
-                        if let Some(index) = cells_triangles[buffer_index].last() {
-                            if *index == i {
-                                continue;
-                            }
-                        }
-                        cells_triangles[buffer_index].push(i);
-                    }
-                }
-            }
-        }
-        // create a single offset array with the dimension of the respective vector
-        let mut offsets = vec![0; cells_per_side * cells_per_side * cells_per_side];
-        let mut triangle_indices = Vec::new();
-        let mut offset = 0;
-        for (i, triangles) in cells_triangles.into_iter().enumerate() {
-            offset += triangles.len();
-            offsets[i] = offset;
-            // add all the triangles id in the triangles indices array
-            triangle_indices.extend(triangles);
-        }
-
-        ModelGrid {
-            bounding_box: model.bounding_box,
-            cells_per_side: cells_per_side as u32,
-            offset_array: offsets,
-            triangle_indices,
-        }
-    }
-
-    fn triangles(&self, ix: u32, iy: u32, iz: u32) -> impl Iterator<Item = &usize> {
-        let index = (iz * self.cells_per_side * self.cells_per_side + iy * self.cells_per_side + ix)
-            as usize;
-        let start = if index > 0 {
-            self.offset_array[index - 1]
-        } else {
-            0
-        };
-        let end = self.offset_array[index];
-        self.triangle_indices[start..end].into_iter()
-    }
-
-    fn cell_box(&self, ix: u32, iy: u32, iz: u32) -> Box3 {
-        let half_cell_size = self.bounding_box.half_extension / self.cells_per_side as f64;
-        Box3::new(
-            self.bounding_box.min()
-                + half_cell_size
-                    * 2.0
-                    * Vec3::new(ix as f64 + 0.5, iy as f64 + 0.5, iz as f64 + 0.5),
-            half_cell_size,
-        )
-    }
-
-    fn cell_size(&self) -> Vec3 {
-        (self.bounding_box.max() - self.bounding_box.min()) / self.cells_per_side as f64
-    }
-
-    /// Returns the index of the cell that contains the point, None if the point is outside the grid
-    fn cell_index_that_include(&self, point: Vec3) -> Option<(u32, u32, u32)> {
-        if !self.bounding_box.contains(point) {
-            return None;
-        }
-        let rel_point = (point - self.bounding_box.min()) / self.cell_size();
-        let ix = rel_point.x as u32;
-        let iy = rel_point.y as u32;
-        let iz = rel_point.z as u32;
-        // the point is for shure contained in the box of the grid,
-        // but it could be on the border of the grid so have the grid coordinates equals to cells_per_side
-        // clamp it to avoid this case
-        Some((
-            ix.clamp(0, self.cells_per_side - 1),
-            iy.clamp(0, self.cells_per_side - 1),
-            iz.clamp(0, self.cells_per_side - 1),
-        ))
-    }
-
-    /// Returns the index of the cell that contains the point, clamped to the boundaries of the grid if the point is outside
-    fn closest_cell_index_that_include(&self, point: Vec3) -> (u32, u32, u32) {
-        let rel_point = (point - self.bounding_box.min()) / self.cell_size();
-        let ix = rel_point.x as u32;
-        let iy = rel_point.y as u32;
-        let iz = rel_point.z as u32;
-        // the point is for shure contained in the box of the grid,
-        // but it could be on the border of the grid so have the grid coordinates equals to cells_per_side
-        // clamp it to avoid this case
-        (
-            ix.clamp(0, self.cells_per_side - 1),
-            iy.clamp(0, self.cells_per_side - 1),
-            iz.clamp(0, self.cells_per_side - 1),
-        )
-    }
-
-    fn boxes_indices(&self) -> impl Iterator<Item = (u32, u32, u32)> + '_ {
-        (0..self.cells_per_side)
-            .flat_map(|i| (0..self.cells_per_side).map(move |j| (i, j)))
-            .flat_map(|(i, j)| (0..self.cells_per_side).map(move |k| (i, j, k)))
-            .into_iter()
-    }
-
-    fn enum_boxes(&self) -> impl Iterator<Item = ((u32, u32, u32), Box3)> + '_ {
-        self.boxes_indices()
-            .map(|(ix, iy, iz)| ((ix, iy, iz), self.cell_box(ix, iy, iz)))
-            .into_iter()
-    }
-}
-
-#[derive(Debug)]
-pub enum Solid {
-    Sphere { center: Vec3, radius: f64 },
-    Plane { normal: Vec3, distance: f64 },
-    Model { model: Model, grid: ModelGrid },
-}
-
-impl Model {
-    fn get_triangle(&self, i: usize) -> (Vec3, Vec3, Vec3) {
-        let v0: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 0] as usize]
-            .position
-            .into();
-        let v0 = self.trasform.apply(v0);
-        let v1: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 1] as usize]
-            .position
-            .into();
-        let v1 = self.trasform.apply(v1);
-        let v2: Vec3 = self.obj.vertices[self.obj.indices[i * 3 + 2] as usize]
-            .position
-            .into();
-        let v2 = self.trasform.apply(v2);
-        (v0, v1, v2)
-    }
-
-    fn iter_triangles(&self) -> impl Iterator<Item = (Vec3, Vec3, Vec3)> + '_ {
-        (0..self.obj.indices.len() / 3)
-            .map(|i| self.get_triangle(i))
-            .into_iter()
-    }
-}
-
-fn calculate_bounding_box(obj: &Obj, trasform: &Mat4) -> Box3 {
-    let mut max = Vec3::new(-f64::INFINITY, -f64::INFINITY, -f64::INFINITY);
-    let mut min = Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
-    for vertex in &obj.vertices {
-        let vertex: Vec3 = vertex.position.into();
-        let vertex = trasform.apply(vertex);
-        if max.x < vertex.x {
-            max.x = vertex.x;
-        }
-        if max.y < vertex.y {
-            max.y = vertex.y;
-        }
-        if max.z < vertex.z {
-            max.z = vertex.z;
-        }
-
-        if min.x > vertex.x {
-            min.x = vertex.x;
-        }
-        if min.y > vertex.y {
-            min.y = vertex.y;
-        }
-        if min.z > vertex.z {
-            min.z = vertex.z;
-        }
-    }
-    Box3::from_min_max(min, max)
-}
-
-impl Solid {
-    pub fn load_model(filename: &str, trasform: Mat4) -> Result<Solid, Box<dyn Error>> {
-        let input = BufReader::new(File::open(filename)?);
-        let obj = load_obj(input)?;
-        let bounding_box = calculate_bounding_box(&obj, &trasform);
-        // DEBUG: remove commented println!
-        // println!("loaded {}, with bounding box {:?}", filename, bounding_box);
-        let model = Model {
-            obj,
-            trasform,
-            bounding_box,
-        };
-        let grid = ModelGrid::new(&model, 32);
-        // println!("Created grid with this offsets: {:?}", grid.offset_array);
-        Ok(Solid::Model { grid, model })
-    }
-}
-
-pub fn hit<'a>(scene: &'a Scene, ray: &'a Ray) -> Option<RaycastResult<'a>> {
-    let mut closest_t = f64::INFINITY;
-    let mut closest_object = None;
-    let mut raycast_to_closest = None;
-    for object in &scene.objects {
-        if let Some(result) = collide(&object.solid, ray) {
-            // avoid t too small (shadow acne)
-            if result.t <= EPSILON {
-                continue;
-            }
-
-            if result.t < closest_t {
-                closest_t = result.t;
-                raycast_to_closest = Some(result);
-                closest_object = Some(object);
-            }
-        }
-    }
-
-    closest_object.map(|object| RaycastResult {
-        hitted_object: object,
-        hit_point: ray.at(closest_t),
-        normal: raycast_to_closest.unwrap().normal,
-    })
 }
 
 pub fn collide(solid: &Solid, ray: &Ray) -> Option<HitResult> {
