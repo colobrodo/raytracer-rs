@@ -81,11 +81,12 @@ impl Box3 {
         }
     }
 
-    pub fn contains(&mut self, point: Vec3) -> bool {
+    #[inline(always)]
+    pub fn contains(&self, point: Vec3) -> bool {
         let dist = point - self.center;
-        return dist.x.abs() <= self.half_extension.x
-            && dist.y.abs() <= self.half_extension.y
-            && dist.z.abs() <= self.half_extension.z;
+        return (dist.x >= -self.half_extension.x && dist.x <= self.half_extension.x)
+            && (dist.y >= -self.half_extension.y && dist.y <= self.half_extension.y)
+            && (dist.z >= -self.half_extension.z && dist.z <= self.half_extension.z);
     }
 
     pub fn min(self: &Self) -> Vec3 {
@@ -96,7 +97,7 @@ impl Box3 {
         self.center + self.half_extension
     }
 
-    fn collide(self: &Self, ray: &Ray) -> bool {
+    fn intersect_ray(&self, ray: &Ray) -> Option<f64> {
         let dirfrac = Vec3::new(
             1.0 / ray.direction.x,
             1.0 / ray.direction.y,
@@ -116,13 +117,13 @@ impl Box3 {
 
         // if tmax < 0, ray (line) is intersecting AABB, but the whole AABB is behind us
         if tmax < 0.0 {
-            return false;
+            return None;
         }
         // if tmin > tmax, ray doesn't intersect AABB
         if tmin > tmax {
-            return false;
+            return None;
         }
-        return true;
+        return Some(tmin);
     }
 }
 
@@ -178,18 +179,76 @@ fn triangle_ray_intersection(triangle: (Vec3, Vec3, Vec3), ray: &Ray) -> Option<
 }
 
 fn ray_intersect(model: &Model, grid: &ModelGrid, ray: &Ray) -> Option<HitResult> {
-    let mut closest_hit: Option<HitResult> = None;
-    for ((ix, iy, iz), bbox) in grid.enum_boxes() {
-        if !bbox.collide(ray) {
-            continue;
-        }
+    let bbox_intersection_t = model.bounding_box.intersect_ray(ray)?;
+    let intersection_point = ray.at(bbox_intersection_t);
+    // we use closest cell index to avoid the case where the intersection point is on the border of the grid
+    // we have implicitly checked that the point is inside the grid by simply calculating it from the ray intersection
+    let (ix, iy, iz) = grid.closest_cell_index_that_include(intersection_point);
+    let (mut ix, mut iy, mut iz) = (ix as i32, iy as i32, iz as i32);
+    // direction sign of each step (1 or -1)
+    let step_x = if ray.direction.x > 0.0 { 1 } else { -1 };
+    let step_y = if ray.direction.y > 0.0 { 1 } else { -1 };
+    let step_z = if ray.direction.z > 0.0 { 1 } else { -1 };
+    // t values: the value of t at which the ray crosses the closest voxel boundary in each dimension
+    // they always refere to the **next** intersection along that dimension
+    let next_cell_ix = ix + step_x.max(0);
+    let next_cell_iy = iy + step_y.max(0);
+    let next_cell_iz = iz + step_z.max(0);
+    let next_cell_bbox = grid
+        .cell_box(
+            next_cell_ix as u32,
+            next_cell_iy as u32,
+            next_cell_iz as u32,
+        )
+        .min();
+    let mut t_max_x = (next_cell_bbox.x - intersection_point.x) / ray.direction.x;
+    let mut t_max_y = (next_cell_bbox.y - intersection_point.y) / ray.direction.y;
+    let mut t_max_z = (next_cell_bbox.z - intersection_point.z) / ray.direction.z;
 
-        for triangle_i in grid.triangles(ix, iy, iz) {
+    // t_deltas: the *increment* of t when moving one unit along the ray in each dimension
+    let cell_size = grid.cell_size();
+    let t_delta_x = step_x as f64 * cell_size.x / ray.direction.x;
+    let t_delta_y = step_y as f64 * cell_size.y / ray.direction.y;
+    let t_delta_z = step_z as f64 * cell_size.z / ray.direction.z;
+
+    let mut closest_hit: Option<HitResult> = None;
+    while ix >= 0
+        && ix < grid.cells_per_side as _
+        && iy >= 0
+        && iy < grid.cells_per_side as _
+        && iz >= 0
+        && iz < grid.cells_per_side as _
+    {
+        // checking for collision inside the list of triangles of this cell
+        for triangle_i in grid.triangles(ix as _, iy as _, iz as _) {
             let triangle = model.get_triangle(*triangle_i);
             if let Some(hit) = triangle_ray_intersection(triangle, ray) {
                 if closest_hit.is_none() || hit.t < closest_hit.unwrap().t {
                     closest_hit = Some(hit);
                 }
+            }
+        }
+        // found the closest hit in the list of triangles in the current cell
+        // no need to proceed further searching in farther cells
+        if closest_hit.is_some() {
+            return closest_hit;
+        }
+        // advancing the ray to the next cell using the DDA algorithm
+        if t_max_x < t_max_y {
+            if t_max_x < t_max_z {
+                ix += step_x;
+                t_max_x += t_delta_x;
+            } else {
+                iz += step_z;
+                t_max_z += t_delta_z;
+            }
+        } else {
+            if t_max_y < t_max_z {
+                iy += step_y;
+                t_max_y += t_delta_y;
+            } else {
+                iz += step_z;
+                t_max_z += t_delta_z;
             }
         }
     }
@@ -280,6 +339,45 @@ impl ModelGrid {
         }
     }
 
+    fn cell_size(&self) -> Vec3 {
+        (self.bounding_box.max() - self.bounding_box.min()) / self.cells_per_side as f64
+    }
+
+    /// Returns the index of the cell that contains the point, None if the point is outside the grid
+    fn cell_index_that_include(&self, point: Vec3) -> Option<(u32, u32, u32)> {
+        if !self.bounding_box.contains(point) {
+            return None;
+        }
+        let rel_point = (point - self.bounding_box.min()) / self.cell_size();
+        let ix = rel_point.x as u32;
+        let iy = rel_point.y as u32;
+        let iz = rel_point.z as u32;
+        // the point is for shure contained in the box of the grid,
+        // but it could be on the border of the grid so have the grid coordinates equals to cells_per_side
+        // clamp it to avoid this case
+        Some((
+            ix.clamp(0, self.cells_per_side - 1),
+            iy.clamp(0, self.cells_per_side - 1),
+            iz.clamp(0, self.cells_per_side - 1),
+        ))
+    }
+
+    /// Returns the index of the cell that contains the point, clamped to the boundaries of the grid if the point is outside
+    fn closest_cell_index_that_include(&self, point: Vec3) -> (u32, u32, u32) {
+        let rel_point = (point - self.bounding_box.min()) / self.cell_size();
+        let ix = rel_point.x as u32;
+        let iy = rel_point.y as u32;
+        let iz = rel_point.z as u32;
+        // the point is for shure contained in the box of the grid,
+        // but it could be on the border of the grid so have the grid coordinates equals to cells_per_side
+        // clamp it to avoid this case
+        (
+            ix.clamp(0, self.cells_per_side - 1),
+            iy.clamp(0, self.cells_per_side - 1),
+            iz.clamp(0, self.cells_per_side - 1),
+        )
+    }
+
     fn boxes_indices(&self) -> impl Iterator<Item = (u32, u32, u32)> + '_ {
         (0..self.cells_per_side)
             .flat_map(|i| (0..self.cells_per_side).map(move |j| (i, j)))
@@ -366,7 +464,7 @@ impl Solid {
             trasform,
             bounding_box,
         };
-        let grid = ModelGrid::new(&model, 4);
+        let grid = ModelGrid::new(&model, 16);
         // println!("Created grid with this offsets: {:?}", grid.offset_array);
         Ok(Solid::Model { grid, model })
     }
@@ -428,11 +526,6 @@ pub fn collide(solid: &Solid, ray: &Ray) -> Option<HitResult> {
             }
             Some(HitResult { t, normal: *normal })
         }
-        Solid::Model { model, grid } => {
-            if !model.bounding_box.collide(ray) {
-                return None;
-            }
-            ray_intersect(model, grid, ray)
-        }
+        Solid::Model { model, grid } => ray_intersect(model, grid, ray),
     }
 }
