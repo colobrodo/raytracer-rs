@@ -1,4 +1,4 @@
-use super::math::{Mat4, Ray, Vec3};
+use super::math::{Box3, Mat4, Ray, Vec3};
 use std::fs::File;
 use std::vec::Vec;
 use std::{error::Error, io::BufReader};
@@ -49,82 +49,6 @@ pub struct RaycastResult<'a> {
     pub hitted_object: &'a SceneObject,
     pub hit_point: Vec3,
     pub normal: Vec3,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Box3 {
-    center: Vec3,
-    half_extension: Vec3,
-}
-
-impl Box3 {
-    pub fn from_min_max(min: Vec3, max: Vec3) -> Box3 {
-        Box3 {
-            center: (min + max) * 0.5,
-            half_extension: (max - min) * 0.5,
-        }
-    }
-
-    pub fn include(&mut self, point: Vec3) {
-        let dist = point - self.center;
-        if dist.x.abs() > self.half_extension.x {
-            self.half_extension.x = (dist.x.abs() + self.half_extension.x) / 2.0;
-            self.center.x += (dist.x - self.half_extension.x * dist.x.signum()) / 2.0;
-        }
-        if dist.y.abs() > self.half_extension.y {
-            self.half_extension.y = (dist.y.abs() + self.half_extension.y) / 2.0;
-            self.center.y += (dist.y - self.half_extension.y * dist.y.signum()) / 2.0;
-        }
-        if dist.z.abs() > self.half_extension.z {
-            self.half_extension.z = (dist.z.abs() + self.half_extension.z) / 2.0;
-            self.center.z += (dist.z - self.half_extension.z * dist.z.signum()) / 2.0;
-        }
-    }
-
-    #[inline(always)]
-    pub fn contains(&self, point: Vec3) -> bool {
-        let dist = point - self.center;
-        return (dist.x >= -self.half_extension.x && dist.x <= self.half_extension.x)
-            && (dist.y >= -self.half_extension.y && dist.y <= self.half_extension.y)
-            && (dist.z >= -self.half_extension.z && dist.z <= self.half_extension.z);
-    }
-
-    pub fn min(self: &Self) -> Vec3 {
-        self.center - self.half_extension
-    }
-
-    pub fn max(self: &Self) -> Vec3 {
-        self.center + self.half_extension
-    }
-
-    fn intersect_ray(&self, ray: &Ray) -> Option<f64> {
-        let dirfrac = Vec3::new(
-            1.0 / ray.direction.x,
-            1.0 / ray.direction.y,
-            1.0 / ray.direction.z,
-        );
-        let relative_min_box = self.min() - ray.origin;
-        let relative_max_box = self.max() - ray.origin;
-        let t1 = relative_min_box.x * dirfrac.x;
-        let t2 = relative_max_box.x * dirfrac.x;
-        let t3 = relative_min_box.y * dirfrac.y;
-        let t4 = relative_max_box.y * dirfrac.y;
-        let t5 = relative_min_box.z * dirfrac.z;
-        let t6 = relative_max_box.z * dirfrac.z;
-
-        let tmin = t1.min(t2).max(t3.min(t4)).max(t5.min(t6));
-        let tmax = t1.max(t2).min(t3.max(t4)).min(t5.max(t6));
-
-        // if tmax < 0, ray (line) is intersecting AABB, but the whole AABB is behind us
-        if tmax < 0.0 {
-            return None;
-        }
-        // if tmin > tmax, ray doesn't intersect AABB
-        if tmin > tmax {
-            return None;
-        }
-        return Some(tmin);
-    }
 }
 
 #[derive(Debug)]
@@ -264,10 +188,7 @@ impl ModelGrid {
             (model.bounding_box.max() - model.bounding_box.min()) / cells_per_side as f64;
         for (i, (v0, v1, v2)) in model.iter_triangles().enumerate() {
             // triangle bounding box
-            let mut bbox = Box3 {
-                center: v0,
-                half_extension: Vec3::zero(),
-            };
+            let mut bbox = Box3::from_single_point(v0);
             bbox.include(v1);
             bbox.include(v2);
             // check each corner of the bounding box which cell intersect
@@ -330,13 +251,13 @@ impl ModelGrid {
 
     fn cell_box(&self, ix: u32, iy: u32, iz: u32) -> Box3 {
         let half_cell_size = self.bounding_box.half_extension / self.cells_per_side as f64;
-        Box3 {
-            half_extension: half_cell_size,
-            center: self.bounding_box.min()
+        Box3::new(
+            self.bounding_box.min()
                 + half_cell_size
                     * 2.0
                     * Vec3::new(ix as f64 + 0.5, iy as f64 + 0.5, iz as f64 + 0.5),
-        }
+            half_cell_size,
+        )
     }
 
     fn cell_size(&self) -> Vec3 {
