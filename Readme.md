@@ -3,7 +3,7 @@
 This is a port of an simple raytracer that I wrote in c++/cuda for an university project to Rust in order to learn it.   
 It reads a simple scene files that let you specify very simple geometries like spheres, planes and also to import wavefront obj file. (Some examples below).   
 To render the 3d model faster I have also implemented a simple grid acceleration datastructure: Each cell contains the list of triangles (even just partially) present inside.
-Every time I want to which is the closest triangle hitted by the ray, I traverse the grid using the DDA algorihtm and returns the closest triangle intersection found in the first grid cell.          
+Every time I want to know which is the closest triangle hitted by the ray, I traverse the grid using the DDA algorihtm and find the closest triangle intersection found in the first grid cell that has at least one intersection.          
 I also handled simple multithreading (with `rayon`) and model trasformations (that aren't present in the original implementation)  
 
 ## Table of contents
