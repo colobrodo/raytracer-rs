@@ -189,6 +189,11 @@ impl Vec3 {
     }
 
     #[inline(always)]
+    pub fn squared_distance(self, other: Vec3) -> f64 {
+        (self - other).squared_len()
+    }
+
+    #[inline(always)]
     pub fn distance(self, other: Vec3) -> f64 {
         (self - other).len()
     }

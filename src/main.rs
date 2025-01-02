@@ -81,11 +81,12 @@ fn cast(scene: &Scene, ray: &Ray) -> Vec3 {
                     origin: result.hit_point,
                     direction: v,
                 };
-                let distance_from_light = result.hit_point.distance(light.position);
+                let distance_from_light_squared = result.hit_point.squared_distance(light.position);
                 if let Some(occlusion_raycast) = hit(scene, &light_ray) {
-                    let distance_from_occluder =
-                        occlusion_raycast.hit_point.distance(result.hit_point);
-                    if distance_from_occluder <= distance_from_light {
+                    let distance_from_occluder_squared = occlusion_raycast
+                        .hit_point
+                        .squared_distance(result.hit_point);
+                    if distance_from_occluder_squared <= distance_from_light_squared {
                         continue;
                     }
                     // here the light is not really occluded, because the object is behind the light
@@ -94,8 +95,8 @@ fn cast(scene: &Scene, ray: &Ray) -> Vec3 {
                 // add to the diffusion component the diffusion light for this source
                 let diffuse_effect = v.dot(normal);
                 if diffuse_effect > 0.001 {
-                    let d = (distance_from_light / light.radius).max(1.0);
-                    let decay_rate = 1.0 / (d * d);
+                    let d = (distance_from_light_squared / (light.radius * light.radius)).max(1.0);
+                    let decay_rate = 1.0 / d;
                     // println!("light {:?} hitpoint {:?}", light.position, result.hit_point);
                     // println!("vector from light{:?} diffuse effect {:?}  normal {:?}", v, diffuse_effect, normal);
                     diffuse_color += light.color * decay_rate * diffuse_effect;
