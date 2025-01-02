@@ -1,4 +1,4 @@
-use super::{Ray, Vec3};
+use super::{Ray, RayIntersectable, Vec3};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Box3 {
@@ -59,8 +59,10 @@ impl Box3 {
     pub fn max(self: &Self) -> Vec3 {
         self.center + self.half_extension
     }
+}
 
-    pub fn intersect_ray(&self, ray: &Ray) -> Option<f64> {
+impl RayIntersectable for Box3 {
+    fn intersect(&self, ray: &Ray) -> Option<f64> {
         let dirfrac = Vec3::new(
             1.0 / ray.direction.x,
             1.0 / ray.direction.y,

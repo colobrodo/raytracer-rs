@@ -1,6 +1,6 @@
 use obj::Obj;
 
-use super::{Box3, Mat4, Vec3};
+use super::{Box3, HitResult, Mat4, Ray, RayHittable, RayIntersectable, Vec3};
 
 pub type Triangle = (Vec3, Vec3, Vec3);
 
@@ -9,6 +9,54 @@ pub struct Model {
     obj: Obj,
     trasform: Mat4,
     pub bounding_box: Box3,
+}
+
+impl RayIntersectable for Triangle {
+    fn intersect(&self, ray: &Ray) -> Option<f64> {
+        // https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
+        let (v0, v1, v2) = *self;
+        let v0v1 = v1 - v0;
+        let v0v2 = v2 - v0;
+        let ray_cross_e2 = ray.direction.cross(v0v2);
+        let determinant = v0v1.dot(ray_cross_e2);
+        // ray and triangle are parallel if det is close to 0
+        if determinant.abs() < f64::EPSILON {
+            return None;
+        }
+        let inverse_determinant = 1.0 / determinant;
+        let tvec = ray.origin - v0;
+        let u = tvec.dot(ray_cross_e2) * inverse_determinant;
+        if u < 0.0 || u > 1.0 {
+            return None;
+        }
+
+        let qvec = tvec.cross(v0v1);
+        let v = ray.direction.dot(qvec) * inverse_determinant;
+        if v < 0.0 || u + v > 1.0 {
+            return None;
+        }
+
+        // At this stage we can compute t to find out where the intersection point is on the line
+        let t = v0v2.dot(qvec) * inverse_determinant;
+        if t < 0.0 {
+            return None;
+        }
+
+        Some(t)
+    }
+}
+
+impl RayHittable for Triangle {
+    fn hit(&self, ray: &Ray) -> Option<HitResult> {
+        let t = self.intersect(ray)?;
+        let (v0, v1, v2) = *self;
+        let v0v1 = v1 - v0;
+        let v0v2 = v2 - v0;
+        Some(HitResult {
+            normal: v0v1.cross(v0v2).normalize(),
+            t,
+        })
+    }
 }
 
 impl Model {

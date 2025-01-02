@@ -1,5 +1,6 @@
 use super::math::{Mat4, Ray, Vec3};
-use super::model::{Model, ModelGrid, Triangle};
+use super::model::{Model, ModelGrid};
+use super::{HitResult, RayHittable, RayIntersectable};
 use std::fs::File;
 use std::vec::Vec;
 use std::{error::Error, io::BufReader};
@@ -38,14 +39,6 @@ pub struct SceneObject {
     pub material: Material,
 }
 
-#[derive(Clone, Copy)]
-pub struct HitResult {
-    // TODO: is not better to store directly the intersection point?
-    //       we should always recompute it from t at least in the end raytracing procedure
-    pub t: f64,
-    pub normal: Vec3,
-}
-
 pub struct RaycastResult<'a> {
     pub hitted_object: &'a SceneObject,
     pub hit_point: Vec3,
@@ -77,7 +70,7 @@ pub fn hit<'a>(scene: &'a Scene, ray: &'a Ray) -> Option<RaycastResult<'a>> {
     let mut closest_object = None;
     let mut raycast_to_closest = None;
     for object in &scene.objects {
-        if let Some(result) = collide(&object.solid, ray) {
+        if let Some(result) = object.solid.hit(ray) {
             // avoid t too small (shadow acne)
             if result.t <= EPSILON {
                 continue;
@@ -98,44 +91,8 @@ pub fn hit<'a>(scene: &'a Scene, ray: &'a Ray) -> Option<RaycastResult<'a>> {
     })
 }
 
-fn triangle_ray_intersection(triangle: Triangle, ray: &Ray) -> Option<HitResult> {
-    // https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
-    let (v0, v1, v2) = triangle;
-    let v0v1 = v1 - v0;
-    let v0v2 = v2 - v0;
-    let ray_cross_e2 = ray.direction.cross(v0v2);
-    let determinant = v0v1.dot(ray_cross_e2);
-    // ray and triangle are parallel if det is close to 0
-    if determinant.abs() < f64::EPSILON {
-        return None;
-    }
-    let inverse_determinant = 1.0 / determinant;
-    let tvec = ray.origin - v0;
-    let u = tvec.dot(ray_cross_e2) * inverse_determinant;
-    if u < 0.0 || u > 1.0 {
-        return None;
-    }
-
-    let qvec = tvec.cross(v0v1);
-    let v = ray.direction.dot(qvec) * inverse_determinant;
-    if v < 0.0 || u + v > 1.0 {
-        return None;
-    }
-
-    // At this stage we can compute t to find out where the intersection point is on the line
-    let t = v0v2.dot(qvec) * inverse_determinant;
-    if t < 0.0 {
-        return None;
-    }
-
-    Some(HitResult {
-        normal: v0v1.cross(v0v2).normalize(),
-        t,
-    })
-}
-
 fn ray_intersect(model: &Model, grid: &ModelGrid, ray: &Ray) -> Option<HitResult> {
-    let bbox_intersection_t = model.bounding_box.intersect_ray(ray)?;
+    let bbox_intersection_t = model.bounding_box.intersect(ray)?;
     let intersection_point = ray.at(bbox_intersection_t);
     // we use closest cell index to avoid the case where the intersection point is on the border of the grid
     // we have implicitly checked that the point is inside the grid by simply calculating it from the ray intersection
@@ -176,9 +133,9 @@ fn ray_intersect(model: &Model, grid: &ModelGrid, ray: &Ray) -> Option<HitResult
         && iz < grid.cells_per_side() as _
     {
         // checking for collision inside the list of triangles of this cell
-        for triangle_i in grid.triangles(ix as _, iy as _, iz as _) {
-            let triangle = model.get_triangle(*triangle_i);
-            if let Some(hit) = triangle_ray_intersection(triangle, ray) {
+        for &triangle_i in grid.triangles(ix as _, iy as _, iz as _) {
+            let triangle = model.get_triangle(triangle_i);
+            if let Some(hit) = triangle.hit(ray) {
                 if closest_hit.is_none() || hit.t < closest_hit.unwrap().t {
                     closest_hit = Some(hit);
                 }
@@ -211,36 +168,38 @@ fn ray_intersect(model: &Model, grid: &ModelGrid, ray: &Ray) -> Option<HitResult
     closest_hit
 }
 
-pub fn collide(solid: &Solid, ray: &Ray) -> Option<HitResult> {
-    match solid {
-        Solid::Sphere { center, radius } => {
-            let oc = ray.origin - *center;
-            let a = ray.direction.dot(ray.direction);
-            let b = 2.0 * ray.direction.dot(oc);
-            let c = oc.dot(oc) - radius * radius;
-            let discriminant = b * b - 4.0 * a * c;
+impl RayHittable for Solid {
+    fn hit(&self, ray: &Ray) -> Option<HitResult> {
+        match self {
+            Solid::Sphere { center, radius } => {
+                let oc = ray.origin - *center;
+                let a = ray.direction.dot(ray.direction);
+                let b = 2.0 * ray.direction.dot(oc);
+                let c = oc.dot(oc) - radius * radius;
+                let discriminant = b * b - 4.0 * a * c;
 
-            if discriminant < 0.0 {
-                return None;
-            }
+                if discriminant < 0.0 {
+                    return None;
+                }
 
-            let t = (-b - discriminant.sqrt()) / (2.0 * a);
-            let normal = (ray.at(t) - *center).normalize();
-            return Some(HitResult { t, normal });
-        }
-        Solid::Plane { normal, distance } => {
-            let dv = normal.dot(ray.direction);
-            let center = *normal * *distance;
-            if dv.abs() < EPSILON {
-                return None;
+                let t = (-b - discriminant.sqrt()) / (2.0 * a);
+                let normal = (ray.at(t) - *center).normalize();
+                return Some(HitResult { t, normal });
             }
-            let d2 = (center - ray.origin).dot(*normal);
-            let t = d2 / dv;
-            if t < EPSILON {
-                return None;
+            Solid::Plane { normal, distance } => {
+                let dv = normal.dot(ray.direction);
+                let center = *normal * *distance;
+                if dv.abs() < EPSILON {
+                    return None;
+                }
+                let d2 = (center - ray.origin).dot(*normal);
+                let t = d2 / dv;
+                if t < EPSILON {
+                    return None;
+                }
+                Some(HitResult { t, normal: *normal })
             }
-            Some(HitResult { t, normal: *normal })
+            Solid::Model { model, grid } => ray_intersect(model, grid, ray),
         }
-        Solid::Model { model, grid } => ray_intersect(model, grid, ray),
     }
 }
