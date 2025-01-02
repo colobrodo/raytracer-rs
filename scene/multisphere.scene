@@ -1,5 +1,7 @@
 size 1200 1200
 
+camera from (-0.5, -0.5, 0)
+
 sphere (-2.5, -2.5, 10) .5 white
 sphere (-2.5, -2.5, 9) .5 white
 sphere (-2.5, -2.5, 8) .5 white

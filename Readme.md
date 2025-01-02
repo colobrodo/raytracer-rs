@@ -62,6 +62,11 @@ Here some of the generated images
 
     size 1200 1200
 
+    camera from (4.0, -8, 0) to (0, 0, 7)
+
+    plane (0, 0, 1.0) 10 white
+    plane (0, 1.0, 0) 2 metal:white
+
     model "./models/bunny_lp.obj" white > scale 0.6 > rotate (1, 0, 0) 3.14 > translate (0, 0, 7)
 
     # light sources
@@ -87,7 +92,8 @@ Here some of the generated images
 
 ## Future
 
-- Improve the acceleration datastructure for 3d model   
-- Use the normals present in the model, and maybe calculate them from the triangle position only if not present in the wavefront file
-- Textures or mtl (?)
-- If I reach reasonable time improving Octree/Grid optimization, try render a video, rendering each frame and then using ffmpeg to combine them  
+- [ ] from DDA improvement there is a nasty bug where some triangles are not rendered and leave visible artifacts
+- [x] Improve the acceleration datastructure for 3d model   
+- [x] Use the normals present in the model, and maybe calculate them from the triangle position only if not present in the wavefront file
+- [ ] Textures or mtl (?)
+- [ ] If I reach reasonable time improving Octree/Grid optimization, try render a video, rendering each frame and then using ffmpeg to combine them  
