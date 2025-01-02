@@ -464,7 +464,7 @@ impl Solid {
             trasform,
             bounding_box,
         };
-        let grid = ModelGrid::new(&model, 16);
+        let grid = ModelGrid::new(&model, 32);
         // println!("Created grid with this offsets: {:?}", grid.offset_array);
         Ok(Solid::Model { grid, model })
     }
