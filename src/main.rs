@@ -150,27 +150,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         scene,
     } = parser_result.unwrap();
 
-    let total_stripes = 32;
     let mut pixels = vec![Vec3::zero(); (width * height) as usize];
-    let stripe_size = (height / total_stripes * width) as usize;
-    let stripes: Vec<(usize, &mut [Vec3])> = pixels.chunks_mut(stripe_size).enumerate().collect();
+    let stripes: Vec<(usize, &mut Vec3)> = pixels.iter_mut().enumerate().collect();
     // measure time
     let start = Instant::now();
     // render the image inside the vec
-    stripes.into_par_iter().for_each(|(stripe_index, stripe)| {
-        for (i, vpixel) in stripe.into_iter().enumerate() {
-            for _ in 0..args.sample_rate {
-                let x = i % width as usize;
-                let y = (stripe_size * stripe_index + i) / width as usize;
-                let x_offset = rand::thread_rng().gen_range(-0.5..0.5);
-                let y_offset = rand::thread_rng().gen_range(-0.5..0.5);
-                // getting pixel ray coordinate
-                let u = (x as f64 + x_offset - (width as f64) * 0.5) / (width as f64);
-                let v = (y as f64 + y_offset - (height as f64) * 0.5) / (height as f64);
+    stripes.into_par_iter().for_each(|(i, vpixel)| {
+        for _ in 0..args.sample_rate {
+            let x = i % width as usize;
+            let y = i / width as usize;
+            let x_offset = rand::thread_rng().gen_range(-0.5..0.5);
+            let y_offset = rand::thread_rng().gen_range(-0.5..0.5);
+            // getting pixel ray coordinate
+            let u = (x as f64 + x_offset - (width as f64) * 0.5) / (width as f64);
+            let v = (y as f64 + y_offset - (height as f64) * 0.5) / (height as f64);
 
-                let ray = camera.shoot_to(u, v);
-                *vpixel += cast(&scene, &ray) / (args.sample_rate as f64);
-            }
+            let ray = camera.shoot_to(u, v);
+            *vpixel += cast(&scene, &ray) / (args.sample_rate as f64);
         }
     });
 
